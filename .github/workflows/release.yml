@@ -3,12 +3,19 @@ name: Rilascio Windows firmato
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Versione da pubblicare (es. v1.0.2)'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: github.event_name == 'push' || github.ref_name == github.event.repository.default_branch
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
@@ -23,14 +30,15 @@ jobs:
         env:
           SURFACEFRAME_SIGNING_KEY_PEM: "${{ secrets.SURFACEFRAME_SIGNING_KEY_PEM }}"
           SURFACEFRAME_PUBLIC_KEY_PEM: "${{ vars.SURFACEFRAME_PUBLIC_KEY_PEM }}"
-          RELEASE_TAG: "${{ github.ref_name }}"
+          RELEASE_TAG: "${{ inputs.tag || github.ref_name }}"
           RELEASE_REPOSITORY: "${{ github.repository }}"
         run: ./package-release.ps1 -Tag $env:RELEASE_TAG -Repository $env:RELEASE_REPOSITORY
       - name: Pubblica i pacchetti
         shell: pwsh
         env:
           GH_TOKEN: "${{ github.token }}"
-          RELEASE_TAG: "${{ github.ref_name }}"
+          RELEASE_TAG: "${{ inputs.tag || github.ref_name }}"
         run: |
-          gh release create $env:RELEASE_TAG --verify-tag --generate-notes artifacts/release/SurfaceFrame-win-x64.zip artifacts/release/surfaceframe-update.json artifacts/release/surfaceframe-update.sig artifacts/release/SurfaceFrame-Setup-win-x64.zip
+          $target = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { @('--target', $env:GITHUB_SHA) } else { @('--verify-tag') }
+          gh release create $env:RELEASE_TAG @target --generate-notes artifacts/release/SurfaceFrame-win-x64.zip artifacts/release/surfaceframe-update.json artifacts/release/surfaceframe-update.sig artifacts/release/SurfaceFrame-Setup-win-x64.zip
           if ($LASTEXITCODE -ne 0) { throw 'Pubblicazione GitHub non riuscita.' }
