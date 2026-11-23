@@ -1,0 +1,22 @@
+{
+  "microsoftClientId": "",
+  "allowSharedLinkScope": false,
+  "sources": [
+    {
+      "id": "aae1788e-f66d-432a-bdd9-0a18a69edd39",
+      "address": "/Foto/Cornice",
+      "enabled": true,
+      "includeSubfolders": true
+    }
+  ],
+  "dashboardUrl": "",
+  "slideSeconds": 30,
+  "inactivitySeconds": 120,
+  "catalogMinutes": 15,
+  "fadeMilliseconds": 700,
+  "minimumAspectRatio": 1.0,
+  "shuffle": true,
+  "fillScreen": true,
+  "autoStart": false,
+  "startInFrame": true
+}

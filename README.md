@@ -1,1 +1,82 @@
-# SurfaceFrame
+# Surface Frame
+
+Cornice fotografica Windows x64 per Surface Pro 6. La presentazione legge le immagini da OneDrive personale. Un tocco apre la dashboard Home Assistant in WebView2. Il logo Windows in basso a sinistra apre il desktop e riduce Surface Frame nell’area di notifica.
+
+## Primo avvio sul Surface
+
+1. Chiudi Surface Frame se è aperto. Estrai tutto lo ZIP e apri **Avvia-Surface-Frame.cmd** dalla cartella estratta.
+2. Attendi l’apertura delle impostazioni. Il launcher controlla WebView2 e lo installa se manca. Nel pacchetto con i sorgenti usa il kit .NET 10 già presente o lo scarica temporaneamente, verifica SHA-512 e compila Surface Frame. La prima preparazione richiede accesso ai server Microsoft e NuGet.
+3. Per gli avvii successivi cerca **Surface Frame** nel menu Start. Il launcher installa la versione in **%LOCALAPPDATA%/SurfaceFrame/app/** e rimuove i suoi file temporanei. In caso di errore indica la causa e il percorso di **installazione.log**.
+
+Configura OneDrive e Home Assistant nelle impostazioni. In **Sistema** puoi scegliere l’avvio automatico. Il workflow Windows x64 prepara anche un pacchetto precompilato che usa lo stesso launcher. Per una build manuale è disponibile **build.ps1**.
+
+## Aggiornamenti dall’app
+
+In **Impostazioni → Sistema → Aggiornamenti**, premi **Controlla aggiornamenti**. Quando è disponibile un rilascio più recente, leggi le note e premi **Aggiorna e riavvia**. Il programma verifica la firma RSA del manifesto e l’hash SHA-256 dello ZIP, poi avvia il nuovo eseguibile in una cartella distinta. Se la finestra della nuova versione non conferma l’avvio, riapre quella precedente. La configurazione, i dati di accesso e la cache WebView2 sono nella cartella dati dell’utente, fuori dalle directory delle versioni.
+
+Il pacchetto iniziale 1.0.2 permette di provare l’app e vedere il pulsante. Per ricevere aggiornamenti serve una configurazione iniziale del canale:
+
+1. Carica il progetto in un repository GitHub autorizzato. L’app usa GitHub Releases senza richiedere credenziali al Surface, quindi per questa implementazione il repository e i pacchetti devono essere accessibili pubblicamente. Non includere dati del Surface, configurazioni personali o chiavi private nel repository.
+2. Genera una coppia RSA 3072 in un ambiente di cui controlli l’accesso. Ad esempio, usa **openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out surfaceframe-private.pem** e **openssl pkey -in surfaceframe-private.pem -pubout -out surfaceframe-public.pem**. Conserva la chiave privata fuori dal repository.
+3. Imposta **SURFACEFRAME_SIGNING_KEY_PEM** come secret GitHub Actions e **SURFACEFRAME_PUBLIC_KEY_PEM** come variabile del repository. Il workflow usa il tag **v1.0.2** per compilare, testare e pubblicare una release con il pacchetto di installazione e i file firmati per l’aggiornamento. Il tag deve coincidere con la versione nel progetto.
+4. Sul Surface estrai **SurfaceFrame-Setup-win-x64.zip** dalla release di cui ti fidi e avvia il launcher. Se la 1.0.2 è già installata dal pacchetto iniziale, il launcher aggiunge il canale senza ricompilare.
+5. Per ogni rilascio successivo, incrementa la versione nel progetto e crea il tag corrispondente. Il pulsante sul Surface propone solo versioni più recenti.
+
+[GitHub Releases API](https://docs.github.com/en/rest/releases/releases#get-the-latest-release) · [Verifica firma RSA in .NET](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.rsa.verifydata)
+
+## OneDrive personale
+
+La registrazione dell’applicazione in Microsoft Entra richiede un tenant in cui puoi registrare app. L’account che possiede o può accedere alle foto è l’account Microsoft personale che selezioni quando accedi da Surface Frame.
+
+1. Usa **Apri Microsoft Entra** nelle impostazioni e vai in **App registrations → New registration**. Usa il nome **Surface Frame** e scegli il tipo di account che include sia le directory organizzative sia gli account Microsoft personali. Surface Frame usa l’autorità di accesso **consumers**.
+2. In **Authentication → Add a platform → Mobile and desktop applications** aggiungi l’URI di reindirizzamento http://localhost. La configurazione usa un client pubblico e l’accesso interattivo nel browser di sistema. Lascia vuota la configurazione dei segreti applicativi.
+3. In **API permissions → Add a permission → Microsoft Graph → Delegated permissions** aggiungi **Files.Read** per i percorsi delle tue cartelle. Se scegli di usare link di condivisione, aggiungi **Files.ReadWrite**. È il permesso minimo documentato da Graph per l’endpoint /shares con un account personale. Il codice utilizza richieste GET per leggere il contenuto. Il riscatto del link può associare l’accesso alla cartella all’account connesso.
+4. Copia **Application (client) ID** in **Impostazioni → OneDrive**. Aggiungi un percorso come **/Foto/Cornice** oppure incolla un link di visualizzazione OneDrive personale **1drv.ms** o **onedrive.live.com**. Per usare i link, seleziona **Consenti l’accesso ai link condivisi**.
+5. Scegli quali cartelle attivare e se includere le sottocartelle. Premi **Salva e accedi a Microsoft**, seleziona il tuo account personale e leggi la richiesta di consenso di Microsoft. Al termine il catalogo si aggiorna. **Salva e aggiorna** richiede una nuova lettura del catalogo.
+
+L’app impiega i metadati Graph e le dimensioni delle anteprime per stimare l’orientamento. Il contatore distingue le immagini compatibili da quelle da verificare. Le foto selezionate vengono filtrate durante la decodifica, dopo la lettura dell’orientamento EXIF dell’originale o con l’orientamento già applicato da OneDrive all’anteprima. Per i file HEIC/HEIF viene tentata un’anteprima o una conversione in JPEG da parte di Graph. La disponibilità per singola foto dipende da OneDrive.
+
+La modalità predefinita riempie il display con ritaglio centrato. Foto quadrate e verticali sono escluse. Durante la presentazione sono tenute in memoria la foto visibile e un’altra foto, usata per il precaricamento o la dissolvenza. Le richieste HTTPS leggono i dati direttamente in RAM. Per limitare i picchi, l’anteprima usa fino a 20 MiB, l’originale fino a 48 MiB e la decodifica scarta immagini oltre 60 MP se non è utilizzabile un’anteprima più piccola.
+
+## Home Assistant e desktop
+
+1. In **Impostazioni → Home Assistant** inserisci l’URL completo della dashboard, copiato dalla barra del browser quando la plancia dedicata è aperta. Usa l’indirizzo finale, incluso il percorso, lo schema e l’eventuale porta.
+2. Salva e tocca la cornice. Esegui una prima volta l’accesso a Home Assistant nella finestra integrata. Il profilo WebView2 conserva la sessione.
+3. I tocchi, i clic, lo scorrimento e la tastiera nella dashboard rinnovano il timer. Dopo 120 secondi di inattività la cornice torna in primo piano. **Cornice** rientra subito nella presentazione.
+4. Premi il logo Windows per accedere al desktop. Per rientrare nella presentazione, fai doppio clic sull’icona Surface Frame nell’area di notifica oppure seleziona **Torna alla cornice** dal suo menu. Il timer opera solo nella modalità Home Assistant.
+
+La finestra usa il display principale di Windows. Sul Surface configurato per il solo pannello integrato questo coincide con lo schermo fisico da 12,3″. La dashboard conserva il layout e i controlli impostati in Home Assistant. Il pannello dei pulsanti resta accessibile sopra la pagina.
+
+## Manutenzione
+
+- **Configurazione** — %LOCALAPPDATA%\SurfaceFrame\settings.json. Il file settings.example.json contiene valori iniziali e può essere usato come esempio. Tratta i link di condivisione come dati riservati quando copi quella configurazione.
+- **Sessioni** — La cartella auth contiene la cache MSAL protetta per l’utente Windows. La cartella home-assistant contiene il profilo WebView2, con la sua sessione e la normale cache web della dashboard. Usa **Disconnetti Microsoft** per rimuovere la sessione Microsoft dell’app.
+- **Diagnostica** — **Sistema → Apri il log**. Il registro riporta eventi, tipologie e codici di errore, ruota a circa 512 KiB e conserva una generazione precedente.
+- **Aggiornamento** — Chiudi Surface Frame dal menu di notifica e sostituisci l’intera cartella dell’applicazione. Se cambi percorso, disattiva e riattiva l’avvio automatico in Impostazioni.
+- **Rimozione** — Disattiva l’avvio automatico, chiudi Surface Frame e rimuovi la cartella dell’app. Il profilo locale rimane disponibile per una reinstallazione. Rimuovilo separatamente se vuoi cancellare configurazione e sessioni.
+
+## Verifiche
+
+| Verifica | Esito |
+| --- | --- |
+| Core compilato con Roslyn su Windows | Superato con requisiti e impostazioni, 40 cicli casuali, aggiunta e rimozione di foto |
+| Graph simulato con risposte HTTP in memoria | Superato per percorsi e link, paginazione, ricorsione, redirect e assenza del token OAuth sul CDN |
+| Markup WPF e risorse | Caricati i modelli di entrambe le finestre con il parser WPF. Verificati i nomi dei gestori degli eventi |
+| Autenticazione MSAL | Compilato il modulo con gli assembly MSAL 4.73.1 disponibili localmente. Accesso reale e build con le dipendenze di progetto da verificare |
+| Launcher a un clic | Verificati struttura dello ZIP e riferimenti dei file. Esecuzione su Windows ancora da verificare |
+| Build completa ed eseguibile x64 | Compilato e pubblicato il runtime autonomo 1.0.2 per Windows x64 con .NET 10.0.404 |
+| Firma e orientamento EXIF in 1.0.2 | Verificati manifesto valido, firma o hash alterati, versione errata e immagini JPG/PNG/WebP con e senza rotazione. Per le prove su Linux è stata usata una controparte di test per il solo oggetto immagine WPF |
+| Aggiornamento e ripristino sul Surface | Da collaudare su Windows dopo la configurazione del canale GitHub e la pubblicazione di una versione successiva |
+| EXIF, touch, installazione e prova prolungata | La suite include fixture JPG, PNG e WebP. La sua esecuzione, il test su OneDrive reale e la prova end-to-end sul Surface sono ancora da eseguire |
+
+Per il collaudo finale, usa una cartella con almeno due orizzontali, una verticale, una quadrata e una ruotata via EXIF. Verifica la rotazione e poi esegui il percorso **foto → dashboard → desktop → area di notifica → cornice**. Controlla che l’uso della plancia rinnovi i 120 secondi e che dal desktop il ritorno sia manuale. Prova una temporanea disconnessione di rete e una sessione di alcune ore. Lo spegnimento programmato del display resta fuori dalla prima versione.
+
+## Riferimenti
+
+- [Graph: accesso agli elementi condivisi](https://learn.microsoft.com/graph/api/shares-get)
+- [Graph: elenco della cartella](https://learn.microsoft.com/graph/api/driveitem-list-children)
+- [Graph: dimensioni e orientamento](https://learn.microsoft.com/graph/api/resources/photo)
+- [Graph: anteprime, originali e conversione](https://learn.microsoft.com/graph/api/driveitem-list-thumbnails) · [Download](https://learn.microsoft.com/graph/api/driveitem-get-content) · [Conversione](https://learn.microsoft.com/graph/api/driveitem-get-content-format)
+- [Microsoft Entra: registrazione applicazione](https://learn.microsoft.com/entra/identity-platform/quickstart-register-app) · [URI desktop](https://learn.microsoft.com/entra/msal/dotnet/how-to/default-reply-uri)
+- [MSAL: conservazione dei token](https://learn.microsoft.com/entra/msal/dotnet/how-to/token-cache-serialization)
+- [WebView2 in WPF](https://learn.microsoft.com/microsoft-edge/webview2/platforms/wpf)

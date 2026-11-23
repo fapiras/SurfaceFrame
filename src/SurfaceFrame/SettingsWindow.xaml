@@ -1,0 +1,176 @@
+<Window x:Class="SurfaceFrame.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Impostazioni · Surface Frame" Width="870" Height="700" MinWidth="560" MinHeight="465"
+        WindowStartupLocation="CenterScreen" ShowInTaskbar="False" Background="#10171E" Foreground="{StaticResource Text}"
+        FontFamily="Segoe UI" FontSize="15">
+    <Window.Resources>
+        <Style TargetType="TextBox">
+            <Setter Property="Foreground" Value="{StaticResource Text}" />
+            <Setter Property="Background" Value="#0E161D" />
+            <Setter Property="BorderBrush" Value="#536675" />
+            <Setter Property="Padding" Value="9,6" />
+            <Setter Property="MinHeight" Value="35" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource Text}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="MinHeight" Value="32" />
+        </Style>
+        <Style TargetType="TabItem">
+            <Setter Property="Foreground" Value="{StaticResource Text}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBackground" Background="#222F3A" CornerRadius="8,8,0,0" Margin="0,0,5,0"
+                                Padding="15,9">
+                            <ContentPresenter ContentSource="Header"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBackground" Property="Background" Value="#45616E"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="FieldLabel" TargetType="TextBlock">
+            <Setter Property="Margin" Value="0,12,0,5" />
+            <Setter Property="Foreground" Value="{StaticResource Text}" />
+        </Style>
+        <Style x:Key="Help" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource Muted}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+    </Window.Resources>
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Text="Impostazioni" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,17" />
+        <TabControl Grid.Row="1" Background="{StaticResource Panel}" BorderBrush="#45616E">
+            <TabItem Header="OneDrive">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16,6,16,16">
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="ID applicazione Microsoft" />
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource Action}" Content="Apri Microsoft Entra"
+                                    Click="OpenEntra_Click" Margin="7,0,0,0" />
+                            <TextBox x:Name="ClientId" AutomationProperties.Name="ID applicazione Microsoft" />
+                        </DockPanel>
+                        <CheckBox x:Name="SharedLinkConsent" Margin="0,7,0,1"
+                                  Content="Consenti l’accesso ai link condivisi (permesso Microsoft Files.ReadWrite)" />
+                        <TextBlock Style="{StaticResource Help}"
+                                   Text="Per una cartella tua puoi usare /Foto/Cornice con accesso di sola lettura. L’uso del link può aggiungere la cartella condivisa all’accesso dell’account." />
+                        <WrapPanel Margin="0,10,0,5">
+                            <Button Style="{StaticResource Action}" Content="Salva e accedi a Microsoft"
+                                    Click="Connect_Click" Margin="0,0,7,5" />
+                            <Button Style="{StaticResource Action}" Content="Disconnetti Microsoft"
+                                    Click="Disconnect_Click" Margin="0,0,7,5" />
+                            <Button Style="{StaticResource Action}" Content="Salva e aggiorna" Click="Refresh_Click" Margin="0,0,0,5" />
+                        </WrapPanel>
+                        <TextBlock x:Name="OneDriveStatusText" Style="{StaticResource Help}" />
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Cartelle" />
+                        <DockPanel LastChildFill="True">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource Action}" Content="Aggiungi"
+                                    Click="AddFolder_Click" Margin="7,0,0,0" />
+                            <TextBox x:Name="FolderAddress" AutomationProperties.Name="Link o percorso cartella OneDrive" />
+                        </DockPanel>
+                        <DataGrid x:Name="SourceTable" AutoGenerateColumns="False" CanUserAddRows="False"
+                                  CanUserDeleteRows="False" SelectionMode="Single" Margin="0,8,0,7" Height="166"
+                                  RowHeight="41" GridLinesVisibility="Horizontal" HeadersVisibility="Column"
+                                  Foreground="{StaticResource Text}" Background="#131C24" RowBackground="#1E2B37"
+                                  AlternatingRowBackground="#253442" ColumnHeaderHeight="32"
+                                  HorizontalGridLinesBrush="#3B5162" BorderBrush="#536675">
+                            <DataGrid.ColumnHeaderStyle>
+                                <Style TargetType="DataGridColumnHeader">
+                                    <Setter Property="Background" Value="#263644" />
+                                    <Setter Property="Foreground" Value="{StaticResource Text}" />
+                                    <Setter Property="Padding" Value="7,0" />
+                                </Style>
+                            </DataGrid.ColumnHeaderStyle>
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Cartella" Binding="{Binding Address}" IsReadOnly="True" Width="*" />
+                                <DataGridCheckBoxColumn Header="Attiva" Binding="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="68" />
+                                <DataGridCheckBoxColumn Header="Sottocartelle" Binding="{Binding Recursive, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="111" />
+                                <DataGridTextColumn Header="Foto e stato" Binding="{Binding Summary}" IsReadOnly="True" Width="185" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <WrapPanel>
+                            <Button Style="{StaticResource Action}" Content="Rimuovi selezionata" Click="RemoveFolder_Click" Margin="0,0,14,4" />
+                            <TextBlock Text="Aggiorna ogni" VerticalAlignment="Center" Margin="0,0,7,0" />
+                            <TextBox x:Name="RefreshMinutes" Width="68" AutomationProperties.Name="Minuti tra aggiornamenti" />
+                            <TextBlock Text="minuti" VerticalAlignment="Center" Margin="7,0,0,0" />
+                        </WrapPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Fotografie">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16,8,16,16">
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Secondi tra le fotografie" />
+                        <TextBox x:Name="SlideSeconds" Width="125" HorizontalAlignment="Left"
+                                 AutomationProperties.Name="Secondi tra le fotografie" />
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Durata dissolvenza (millisecondi)" />
+                        <TextBox x:Name="FadeMilliseconds" Width="125" HorizontalAlignment="Left"
+                                 AutomationProperties.Name="Durata dissolvenza in millisecondi" />
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Rapporto minimo larghezza / altezza" />
+                        <TextBox x:Name="MinimumRatio" Width="125" HorizontalAlignment="Left"
+                                 AutomationProperties.Name="Rapporto minimo larghezza diviso altezza" />
+                        <CheckBox x:Name="Shuffle" Content="Ordine casuale senza ripetizioni nel ciclo" Margin="0,12,0,0" />
+                        <CheckBox x:Name="FillScreen" Content="Riempi lo schermo con ritaglio centrato" />
+                        <CheckBox x:Name="Pause" Content="Sospendi la presentazione fino a ripresa manuale" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Home Assistant">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16,8,16,16">
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="URL completo della dashboard" />
+                        <TextBox x:Name="DashboardUrl" AutomationProperties.Name="URL completo della dashboard" />
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Secondi di inattività prima di tornare alle foto" />
+                        <TextBox x:Name="IdleSeconds" Width="125" HorizontalAlignment="Left"
+                                 AutomationProperties.Name="Secondi di inattività" />
+                        <TextBlock x:Name="DashboardStatusText" Style="{StaticResource Help}" Margin="0,17,0,0" />
+                        <TextBlock Style="{StaticResource Help}" Margin="0,15,0,0"
+                                   Text="Il logo Windows apre il desktop. Il pulsante Cornice riporta alle foto." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Sistema">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16,10,16,16">
+                        <CheckBox x:Name="AutoStart" Content="Avvia Surface Frame all’accesso a Windows" />
+                        <CheckBox x:Name="StartInFrame" Content="Mostra la cornice all’avvio automatico" />
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Aggiornamenti" />
+                        <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Help}" />
+                        <TextBlock x:Name="ReleaseNotes" Style="{StaticResource Help}" Margin="0,8,0,0" Visibility="Collapsed" />
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                            <Button x:Name="CheckUpdateButton" Style="{StaticResource Action}" Content="Controlla aggiornamenti"
+                                    Click="CheckUpdate_Click" />
+                            <Button x:Name="ApplyUpdateButton" Style="{StaticResource Action}" Content="Aggiorna e riavvia"
+                                    Click="ApplyUpdate_Click" Margin="8,0,0,0" Visibility="Collapsed" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Diagnostica" />
+                        <TextBlock x:Name="DiagnosticText" Style="{StaticResource Help}" />
+                        <Button Style="{StaticResource Action}" Content="Apri il log" Click="Logs_Click"
+                                HorizontalAlignment="Left" Margin="0,11,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+        <DockPanel Grid.Row="2" Margin="0,13,0,0" LastChildFill="True">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <Button Style="{StaticResource Action}" Content="Chiudi" IsCancel="True" Margin="0,0,7,0" MinWidth="79" />
+                <Button Style="{StaticResource Action}" Content="Salva" Click="Save_Click" MinWidth="92" />
+            </StackPanel>
+            <TextBlock x:Name="ResultText" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="#F2C293"
+                       Margin="0,0,12,0" FontSize="14" />
+        </DockPanel>
+    </Grid>
+</Window>

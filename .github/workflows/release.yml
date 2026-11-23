@@ -1,0 +1,36 @@
+name: Rilascio Windows firmato
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test e compilazione
+        shell: pwsh
+        run: ./build.ps1
+      - name: Prepara e firma il rilascio
+        shell: pwsh
+        env:
+          SURFACEFRAME_SIGNING_KEY_PEM: "${{ secrets.SURFACEFRAME_SIGNING_KEY_PEM }}"
+          SURFACEFRAME_PUBLIC_KEY_PEM: "${{ vars.SURFACEFRAME_PUBLIC_KEY_PEM }}"
+          RELEASE_TAG: "${{ github.ref_name }}"
+          RELEASE_REPOSITORY: "${{ github.repository }}"
+        run: ./package-release.ps1 -Tag $env:RELEASE_TAG -Repository $env:RELEASE_REPOSITORY
+      - name: Pubblica i pacchetti
+        shell: pwsh
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          RELEASE_TAG: "${{ github.ref_name }}"
+        run: |
+          gh release create $env:RELEASE_TAG --verify-tag --generate-notes artifacts/release/SurfaceFrame-win-x64.zip artifacts/release/surfaceframe-update.json artifacts/release/surfaceframe-update.sig artifacts/release/SurfaceFrame-Setup-win-x64.zip
+          if ($LASTEXITCODE -ne 0) { throw 'Pubblicazione GitHub non riuscita.' }

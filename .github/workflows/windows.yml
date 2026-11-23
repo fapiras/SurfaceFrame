@@ -1,0 +1,33 @@
+name: Windows x64
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test and publish
+        shell: pwsh
+        run: ./build.ps1
+      - name: Assemble one-click package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts/distribution | Out-Null
+          Copy-Item -LiteralPath artifacts/win-x64 -Destination artifacts/distribution/app -Recurse
+          Copy-Item -LiteralPath Avvia-Surface-Frame.cmd, setup.ps1, README.md, settings.example.json -Destination artifacts/distribution
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SurfaceFrame-win-x64
+          path: artifacts/distribution
+          if-no-files-found: error
