@@ -1,9 +1,11 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 
 namespace SurfaceFrame;
 
-internal sealed class RcloneOneDrive(string storageRoot)
+internal sealed class RcloneOneDrive(string storageRoot, HttpClient graph)
 {
     private const string RemoteName = "surfaceframe";
     private const int CatalogLimit = 32 * 1024 * 1024;
@@ -22,48 +24,29 @@ internal sealed class RcloneOneDrive(string storageRoot)
             using var initial = await ConfigStepAsync(staging.Path, token, "config", "create", RemoteName, "onedrive",
                 "tenant", "consumers", "auth_url", prefix + "authorize", "token_url", prefix + "token",
                 "access_scopes", "Files.Read offline_access", "--non-interactive");
-            JsonDocument current = initial;
-            try
-            {
-                // The bundled version provides machine-readable OAuth and drive-selection steps.
-                for (int step = 0; step < 8; step++)
-                {
-                    var response = current.RootElement;
-                    if (ReadString(response, "Error").Length > 0)
-                        break;
-                    string state = ReadString(response, "State");
-                    if (state.Length == 0)
-                    {
-                        if (!File.ReadLines(staging.Path).Any(line => line.Trim() == "drive_type = personal"))
-                            break;
-                        token.ThrowIfCancellationRequested();
-                        File.Move(staging.Path, ConfigPath, overwrite: true);
-                        return;
-                    }
+            string state = ReadString(initial.RootElement, "State");
+            if (state.Length == 0 || ReadString(initial.RootElement.GetProperty("Option"), "Name") != "config_is_local")
+                throw new RcloneException("Impossibile avviare la procedura di accesso Microsoft.");
 
-                    var option = response.GetProperty("Option");
-                    string answer = ReadString(option, "Name") switch
-                    {
-                        "config_is_local" or "config_drive_ok" => "true",
-                        "config_type" => "onedrive",
-                        "config_driveid" => FindPersonalDrive(option),
-                        _ => ""
-                    };
-                    if (answer.Length == 0)
-                        break;
-                    var next = await ConfigStepAsync(staging.Path, token, "config", "update", RemoteName,
-                        "--continue", "--state", state, "--result", answer);
-                    if (!ReferenceEquals(current, initial))
-                        current.Dispose();
-                    current = next;
-                }
-            }
-            finally
-            {
-                if (!ReferenceEquals(current, initial))
-                    current.Dispose();
-            }
-            throw new RcloneException("Collegamento non riuscito. Scegli un account Microsoft personale con OneDrive attivo.");
+            using var authorization = await ConfigStepAsync(staging.Path, token, "config", "update", RemoteName,
+                "--continue", "--state", state, "--result", "true");
+            if (ReadString(authorization.RootElement, "Error").Length > 0)
+                throw new RcloneException("Microsoft non ha completato l’autorizzazione di OneDrive.");
+            using var credentials = await ConfigStepAsync(staging.Path, token, "config", "dump");
+            string session = ReadString(credentials.RootElement.GetProperty(RemoteName), "token");
+            if (session.Length == 0)
+                throw new RcloneException("Il browser ha terminato l’accesso, ma la sessione Microsoft non è disponibile.");
+            using var oauth = JsonDocument.Parse(session);
+            string accessToken = ReadString(oauth.RootElement, "access_token");
+            if (accessToken.Length == 0)
+                throw new RcloneException("La sessione Microsoft non contiene l’autorizzazione di lettura.");
+
+            string driveId = await ResolvePersonalDriveAsync(graph, accessToken, token);
+            // A non-interactive update saves these options before asking whether to replace the existing token.
+            using var update = await ConfigStepAsync(staging.Path, token, "config", "update", RemoteName,
+                "drive_id", driveId, "drive_type", "personal", "--non-interactive");
+            token.ThrowIfCancellationRequested();
+            File.Move(staging.Path, ConfigPath, overwrite: true);
         }
         catch (RcloneException error) when (error.Message.StartsWith("Lettura", StringComparison.Ordinal))
         {
@@ -144,10 +127,32 @@ internal sealed class RcloneOneDrive(string storageRoot)
         value.TryGetProperty(name, out var field) && field.ValueKind == JsonValueKind.String
             ? field.GetString() ?? "" : "";
 
-    internal static string FindPersonalDrive(JsonElement option) =>
-        option.GetProperty("Examples").EnumerateArray()
-            .Where(example => ReadString(example, "Help").EndsWith(" (personal)", StringComparison.Ordinal))
-            .Select(example => ReadString(example, "Value")).FirstOrDefault() ?? "";
+    internal static async Task<string> ResolvePersonalDriveAsync(HttpClient graph, string accessToken,
+        CancellationToken token)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            "https://graph.microsoft.com/v1.0/me/drive?$select=id,driveType");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        using var response = await graph.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
+        if (!response.IsSuccessStatusCode)
+        {
+            int status = (int)response.StatusCode;
+            string message = response.StatusCode switch
+            {
+                HttpStatusCode.NotFound => "Microsoft non trova il OneDrive personale per questo account. Apri OneDrive nel browser e verifica che mostri i tuoi file.",
+                HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden =>
+                    $"Microsoft ha confermato l’accesso, ma ha rifiutato la lettura di OneDrive (HTTP {status}).",
+                _ => $"Microsoft non ha restituito il OneDrive personale (HTTP {status})."
+            };
+            throw new RcloneException(message);
+        }
+        using var body = await response.Content.ReadAsStreamAsync(token);
+        using var drive = await JsonDocument.ParseAsync(body, cancellationToken: token);
+        string id = ReadString(drive.RootElement, "id");
+        if (id.Length == 0 || ReadString(drive.RootElement, "driveType") != "personal")
+            throw new RcloneException("Microsoft non ha restituito un drive di tipo personale per questo account.");
+        return id;
+    }
 
     private static async Task<JsonDocument> ConfigStepAsync(string config, CancellationToken token,
         params string[] arguments)

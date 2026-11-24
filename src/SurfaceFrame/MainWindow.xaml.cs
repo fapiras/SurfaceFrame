@@ -51,7 +51,7 @@ public partial class MainWindow : Window
         Updates = new UpdateService(storage);
         settings = storage.Load();
         signIn = new MicrosoftSignIn(storage.Root);
-        rclone = new RcloneOneDrive(storage.Root);
+        rclone = new RcloneOneDrive(storage.Root, graphClient);
         playback = new PhotoPlayback(storage, signIn, new OneDrive(graphClient, mediaClient), rclone);
         dashboard = new Dashboard(BrowserHost, storage);
         dashboard.Changed += UpdateHomeStatus;

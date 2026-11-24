@@ -1,7 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
+using System.Net.Http;
 using SurfaceFrame.Verification;
 
 namespace SurfaceFrame;
@@ -33,16 +33,39 @@ internal static class Program
             new FrameSettings { MicrosoftClientId = Guid.NewGuid().ToString() }.UsesRclone ||
             !new FrameSettings { MicrosoftClientId = Guid.NewGuid().ToString(), UseRclone = true }.UsesRclone)
             throw new InvalidOperationException("Modalità OneDrive predefinita o migrazione impostazioni errata.");
-        using var options = JsonDocument.Parse("""
-            {"Examples":[{"Value":"azienda","Help":"OneDrive (business)"},{"Value":"foto","Help":"OneDrive (personal)"}]}
-            """);
-        using var businessOnly = JsonDocument.Parse("""
-            {"Examples":[{"Value":"azienda","Help":"OneDrive (business)"}]}
-            """);
-        if (RcloneOneDrive.FindPersonalDrive(options.RootElement) != "foto" ||
-            RcloneOneDrive.FindPersonalDrive(businessOnly.RootElement) != "")
-            throw new InvalidOperationException("Selezione del OneDrive personale errata.");
-        Console.WriteLine("OK: selezione OneDrive personale e compatibilità delle impostazioni.");
+        CheckPersonalDriveEndpointAsync().GetAwaiter().GetResult();
+        Console.WriteLine("OK: lettura diretta di OneDrive personale e compatibilità delle impostazioni.");
+    }
+
+    private static async Task CheckPersonalDriveEndpointAsync()
+    {
+        using var graph = new HttpClient(new TestGraph("""{"id":"test-drive","driveType":"personal"}"""));
+        if (await RcloneOneDrive.ResolvePersonalDriveAsync(graph, "test-token", CancellationToken.None) != "test-drive")
+            throw new InvalidOperationException("Identificativo OneDrive perso.");
+        using var business = new HttpClient(new TestGraph("""{"id":"other-drive","driveType":"business"}"""));
+        try
+        {
+            await RcloneOneDrive.ResolvePersonalDriveAsync(business, "test-token", CancellationToken.None);
+        }
+        catch (RcloneException)
+        {
+            return;
+        }
+        throw new InvalidOperationException("OneDrive aziendale accettato.");
+    }
+
+    private sealed class TestGraph(string payload) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            if (request.RequestUri?.AbsoluteUri != "https://graph.microsoft.com/v1.0/me/drive?$select=id,driveType" ||
+                request.Headers.Authorization?.ToString() != "Bearer test-token")
+                throw new InvalidOperationException("Richiesta al drive Microsoft errata.");
+            return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload, Encoding.UTF8, "application/json")
+            });
+        }
     }
 
     private static void CheckImage(int width, int height, ushort orientation, string extension,
