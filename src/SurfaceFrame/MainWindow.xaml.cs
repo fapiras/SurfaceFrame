@@ -489,6 +489,8 @@ public partial class MainWindow : Window
     }
 
     private void Frame_Click(object sender, RoutedEventArgs args) => ShowFrame();
+    private void Minimize_Click(object sender, RoutedEventArgs args) => LeaveForDesktop(showShell: false);
+    private void Exit_Click(object sender, RoutedEventArgs args) => Close();
     private void Windows_Click(object sender, RoutedEventArgs args) => LeaveForDesktop(showShell: true);
     private void Settings_Click(object sender, RoutedEventArgs args) => ShowSettings();
     private async void RetryHome_Click(object sender, RoutedEventArgs args) => await dashboard.RetryAsync();

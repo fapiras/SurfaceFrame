@@ -45,6 +45,8 @@ La modalità predefinita riempie il display con ritaglio centrato. Foto quadrate
 3. I tocchi, i clic, lo scorrimento e la tastiera nella dashboard rinnovano il timer. Dopo 120 secondi di inattività la cornice torna in primo piano. **Cornice** rientra subito nella presentazione.
 4. Premi il logo Windows per accedere al desktop. Per rientrare nella presentazione, fai doppio clic sull’icona Surface Frame nell’area di notifica oppure seleziona **Torna alla cornice** dal suo menu. Il timer opera solo nella modalità Home Assistant.
 
+Dalla versione 1.0.3, **Minimizza** e **Chiudi** sono sempre visibili in alto a destra, sia sulla cornice sia sulla dashboard. **Minimizza** lascia l’app aperta nell’area di notifica. Fai doppio clic sulla sua icona per tornare alla cornice. **Chiudi** termina l’app.
+
 La finestra usa il display principale di Windows. Sul Surface configurato per il solo pannello integrato questo coincide con lo schermo fisico da 12,3″. La dashboard conserva il layout e i controlli impostati in Home Assistant. Il pannello dei pulsanti resta accessibile sopra la pagina.
 
 ## Manutenzione

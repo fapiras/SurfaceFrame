@@ -52,5 +52,16 @@
                 </StackPanel>
             </Border>
         </Grid>
+        <Border Background="#EA18212A" BorderBrush="#435563" BorderThickness="1" CornerRadius="12"
+                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,14,0" Padding="5"
+                Panel.ZIndex="10">
+            <StackPanel Orientation="Horizontal">
+                <Button Style="{StaticResource Action}" Content="Minimizza" MinHeight="44" MinWidth="96"
+                        Click="Minimize_Click" ToolTip="Torna al desktop lasciando aperto Surface Frame" />
+                <Button Style="{StaticResource Action}" Content="Chiudi" MinHeight="44" MinWidth="82"
+                        Click="Exit_Click" Margin="5,0,0,0" AutomationProperties.Name="Chiudi Surface Frame"
+                        ToolTip="Chiudi completamente Surface Frame" />
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>
