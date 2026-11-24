@@ -17,12 +17,19 @@ public partial class SettingsWindow : Window
     private bool authenticating;
     private bool? useRclone;
     private AvailableUpdate? availableUpdate;
+    private string browsePath = "/";
+    private bool browsing;
 
     internal SettingsWindow(MainWindow frame, FrameSettings settings)
     {
         InitializeComponent();
         this.frame = frame;
-        UpdateStatusText.Text = $"Versione {UpdateService.CurrentVersion}. {frame.Updates.LastResult}".TrimEnd();
+        bool channelReady = frame.Updates.HasChannel;
+        var summary = channelReady ? "Canale GitHub attivo." :
+            "Per attivare il canale, installa SurfaceFrame-Setup-win-x64.zip dalla release firmata.";
+        UpdateStatusText.Text = $"Versione {UpdateService.CurrentVersion}. {summary} {frame.Updates.LastResult}".TrimEnd();
+        CheckUpdateButton.IsEnabled = channelReady;
+        OpenReleasesButton.Visibility = channelReady ? Visibility.Collapsed : Visibility.Visible;
         useRclone = settings.UseRclone;
         GraphOptions.IsExpanded = !settings.UsesRclone;
         ClientId.Text = settings.MicrosoftClientId;
@@ -33,6 +40,14 @@ public partial class SettingsWindow : Window
         MinimumRatio.Text = settings.MinimumAspectRatio.ToString(CultureInfo.CurrentCulture);
         Shuffle.IsChecked = settings.Shuffle;
         FillScreen.IsChecked = settings.FillScreen;
+        IncludeVerticalPhotos.IsChecked = settings.IncludeVerticalPhotos;
+        ShowPhotoName.IsChecked = settings.ShowPhotoName;
+        ShowPhotoDate.IsChecked = settings.ShowPhotoDate;
+        CachePhotos.IsChecked = settings.CachePhotos;
+        NightEnabled.IsChecked = settings.NightEnabled;
+        NightBlackScreen.IsChecked = settings.NightBlackScreen;
+        NightStart.Text = settings.NightStart.ToString("HH:mm", CultureInfo.InvariantCulture);
+        NightEnd.Text = settings.NightEnd.ToString("HH:mm", CultureInfo.InvariantCulture);
         Pause.IsChecked = frame.Paused;
         DashboardUrl.Text = settings.DashboardUrl;
         IdleSeconds.Text = settings.InactivitySeconds.ToString(CultureInfo.CurrentCulture);
@@ -56,7 +71,7 @@ public partial class SettingsWindow : Window
 
         foreach (var row in rows)
         {
-            var count = frame.Compatibility(row.Id, ParseRatio() ?? 1);
+            var count = frame.Compatibility(row.Id, IncludeVerticalPhotos.IsChecked == true ? 0 : ParseRatio() ?? 1);
             string? status = frame.SourceStatus(row.Id);
             row.Summary = !row.Enabled ? "Disattivata" : status switch
             {
@@ -68,9 +83,10 @@ public partial class SettingsWindow : Window
         }
     }
 
-    private void AddFolder_Click(object sender, RoutedEventArgs args)
+    private void AddFolder_Click(object sender, RoutedEventArgs args) => AddFolder(FolderAddress.Text.Trim());
+
+    private void AddFolder(string address)
     {
-        string address = FolderAddress.Text.Trim();
         if (!FolderSource.IsValid(address))
         {
             ResultText.Text = "Inserisci un link di OneDrive personale o un percorso come /Foto/Cornice.";
@@ -87,6 +103,53 @@ public partial class SettingsWindow : Window
         SourceTable.ScrollIntoView(row);
         FolderAddress.Clear();
         ResultText.Text = "";
+    }
+
+    private async void Browse_Click(object sender, RoutedEventArgs args) => await BrowseAsync("/");
+
+    private async void BrowseOpen_Click(object sender, RoutedEventArgs args)
+    {
+        if (BrowseList.SelectedItem is string child)
+            await BrowseAsync(browsePath.TrimEnd('/') + "/" + child);
+    }
+
+    private async void BrowseUp_Click(object sender, RoutedEventArgs args) =>
+        await BrowseAsync(browsePath[..Math.Max(1, browsePath.LastIndexOf('/'))]);
+
+    private void BrowseSelect_Click(object sender, RoutedEventArgs args) => AddFolder(browsePath);
+
+    private async Task BrowseAsync(string path)
+    {
+        if (browsing || authenticating)
+            return;
+        browsing = true;
+        FolderBrowser.Visibility = Visibility.Visible;
+        FolderBrowser.IsExpanded = true;
+        BrowseButton.IsEnabled = BrowseUp.IsEnabled = BrowseOpen.IsEnabled = BrowseSelect.IsEnabled = false;
+        BrowseStatus.Text = "Caricamento delle cartelle…";
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
+        timeout.CancelAfter(TimeSpan.FromSeconds(30));
+        try
+        {
+            var directories = await frame.BrowseFoldersAsync(path, timeout.Token);
+            browsePath = path;
+            BrowsePath.Text = browsePath == "/" ? "OneDrive · I miei file" : browsePath;
+            BrowseList.ItemsSource = directories;
+            BrowseStatus.Text = directories.Count == 0 ? "Questa cartella non contiene sottocartelle." : "";
+            BrowseSelect.IsEnabled = true;
+            BrowseOpen.IsEnabled = directories.Count > 0;
+        }
+        catch (Exception error)
+        {
+            if (IsLoaded)
+                BrowseStatus.Text = PhotoPlayback.Describe(error);
+        }
+        finally
+        {
+            BrowseButton.IsEnabled = true;
+            BrowseUp.IsEnabled = browsePath != "/";
+            browsing = false;
+        }
     }
 
     private void RemoveFolder_Click(object sender, RoutedEventArgs args)
@@ -118,6 +181,14 @@ public partial class SettingsWindow : Window
                 MinimumAspectRatio = ParseRatio() ?? throw new ArgumentException("Inserisci il rapporto minimo delle foto."),
                 Shuffle = Shuffle.IsChecked == true,
                 FillScreen = FillScreen.IsChecked == true,
+                IncludeVerticalPhotos = IncludeVerticalPhotos.IsChecked == true,
+                ShowPhotoName = ShowPhotoName.IsChecked == true,
+                ShowPhotoDate = ShowPhotoDate.IsChecked == true,
+                CachePhotos = CachePhotos.IsChecked == true,
+                NightEnabled = NightEnabled.IsChecked == true,
+                NightBlackScreen = NightBlackScreen.IsChecked == true,
+                NightStart = ReadTime(NightStart.Text),
+                NightEnd = ReadTime(NightEnd.Text),
                 DashboardUrl = DashboardUrl.Text.Trim(),
                 InactivitySeconds = ReadInteger(IdleSeconds.Text, "inattività Home Assistant"),
                 AutoStart = AutoStart.IsChecked == true,
@@ -148,6 +219,10 @@ public partial class SettingsWindow : Window
             double.TryParse(MinimumRatio.Text, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out ratio)
             ? ratio : null;
     }
+
+    private static TimeOnly ReadTime(string value) =>
+        TimeOnly.TryParseExact(value.Trim(), ["H:mm", "HH:mm"], CultureInfo.InvariantCulture,
+            DateTimeStyles.None, out var time) ? time : throw new ArgumentException("Inserisci gli orari nel formato HH:mm.");
 
     private static int ReadInteger(string value, string name) => int.TryParse(value, out int number)
         ? number : throw new ArgumentException($"Inserisci un numero intero per {name}.");
@@ -206,7 +281,7 @@ public partial class SettingsWindow : Window
 
     private async Task AuthenticateAsync(Func<CancellationToken, Task> action, string pending, string complete)
     {
-        if (authenticating)
+        if (authenticating || browsing)
             return;
         authenticating = true;
         ResultText.Text = pending;
@@ -273,6 +348,18 @@ public partial class SettingsWindow : Window
                 UpdateStatusText.Text = $"Aggiornamento non avviato. {error.Message}";
         }
         finally { CheckUpdateButton.IsEnabled = ApplyUpdateButton.IsEnabled = true; }
+    }
+
+    private void OpenReleases_Click(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://github.com/fapiras/SurfaceFrame/releases") { UseShellExecute = true });
+        }
+        catch (Exception)
+        {
+            ResultText.Text = "Apri le release di fapiras/SurfaceFrame dal browser.";
+        }
     }
 
     private void Logs_Click(object sender, RoutedEventArgs args)

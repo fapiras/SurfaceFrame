@@ -7,7 +7,7 @@ namespace SurfaceFrame;
 
 internal sealed record PhotoItem(string DriveId, string ItemId, string Name, string Revision,
     long Bytes, int Width, int Height, int Orientation, int ThumbnailWidth = 0, int ThumbnailHeight = 0,
-    string? RclonePath = null)
+    string? RclonePath = null, DateTimeOffset? PhotoDate = null)
 {
     internal string Key => $"{DriveId}/{ItemId}";
     internal bool IsHeic => Path.GetExtension(Name).ToLowerInvariant() is ".heic" or ".heif";
@@ -36,7 +36,7 @@ internal sealed record PhotoItem(string DriveId, string ItemId, string Name, str
 internal sealed class OneDrive(HttpClient graph, HttpClient media)
 {
     private const string GraphRoot = "https://graph.microsoft.com/v1.0/";
-    private const string ItemFields = "id,name,size,eTag,folder,file,image,photo,parentReference,remoteItem";
+    private const string ItemFields = "id,name,size,eTag,folder,file,image,photo,lastModifiedDateTime,parentReference,remoteItem";
     internal const int MaxOriginalBytes = 48 * 1024 * 1024;
     private const long MaxThumbnailBytes = 20L * 1024 * 1024;
     internal const long ThumbnailThreshold = 1024 * 1024;
@@ -107,7 +107,9 @@ internal sealed class OneDrive(HttpClient graph, HttpClient media)
                     photos.Add(new PhotoItem(identity.DriveId, identity.ItemId, name,
                         GetString(item, "eTag") ?? "", GetNumber(item, "size"),
                         (int)GetNumber(image, "width"), (int)GetNumber(image, "height"),
-                        (int)GetNumber(photo, "orientation"), (int)GetNumber(large, "width"), (int)GetNumber(large, "height")));
+                        (int)GetNumber(photo, "orientation"), (int)GetNumber(large, "width"), (int)GetNumber(large, "height"),
+                        PhotoDate: DateTimeOffset.TryParse(GetString(photo, "takenDateTime") ??
+                            GetString(item, "lastModifiedDateTime"), out var captured) ? captured : null));
                 }
                 page = GetString(result.RootElement, "@odata.nextLink");
             }

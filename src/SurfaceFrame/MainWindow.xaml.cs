@@ -1,9 +1,11 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Forms = System.Windows.Forms;
@@ -19,6 +21,16 @@ public partial class MainWindow : Window
     private readonly MicrosoftSignIn signIn;
     private readonly RcloneOneDrive rclone;
     private readonly PhotoPlayback playback;
+    private readonly PhotoCache photoCache;
+    private readonly HashSet<string> cachedPhotosSeen = new(StringComparer.Ordinal);
+    private DisplayPhoto? previousPhoto;
+    private DisplayPhoto? forwardPhoto;
+    private bool showNextRequested;
+    private bool showingCachedPhoto;
+    private bool useCachedPhotos;
+    private bool nightWasActive;
+    private bool nightOverridden;
+    private DateTime commandsUntil;
     private readonly Dashboard dashboard;
     private readonly DispatcherTimer timer;
     private readonly Forms.NotifyIcon tray;
@@ -52,6 +64,7 @@ public partial class MainWindow : Window
         settings = storage.Load();
         signIn = new MicrosoftSignIn(storage.Root);
         rclone = new RcloneOneDrive(storage.Root, graphClient);
+        photoCache = new PhotoCache(storage);
         playback = new PhotoPlayback(storage, signIn, new OneDrive(graphClient, mediaClient), rclone);
         dashboard = new Dashboard(BrowserHost, storage);
         dashboard.Changed += UpdateHomeStatus;
@@ -82,7 +95,19 @@ public partial class MainWindow : Window
             { Interval = TimeSpan.FromMilliseconds(400) };
         timer.Tick += TimerTick;
         timer.Start();
-        Loaded += (_, _) => { if (mode != Mode.Desktop) PositionOnPrimaryScreen(); };
+        CommandMenu.AddHandler(System.Windows.Controls.Primitives.ButtonBase.ClickEvent,
+            new RoutedEventHandler((_, _) => CloseCommands()), true);
+        CommandPopup.CustomPopupPlacementCallback = (popup, target, _) =>
+            [new CustomPopupPlacement(new Point(Math.Max(0, target.Width - popup.Width - 16),
+                Math.Max(0, target.Height - popup.Height - 16)), PopupPrimaryAxis.None)];
+        SizeChanged += (_, _) => PositionCommands();
+        LocationChanged += (_, _) => PositionCommands();
+        Loaded += (_, _) =>
+        {
+            if (mode != Mode.Desktop)
+                PositionOnPrimaryScreen();
+            UpdateCommands();
+        };
         StateChanged += (_, _) =>
         {
             if (!closed && WindowState == WindowState.Minimized && mode != Mode.Desktop)
@@ -90,7 +115,12 @@ public partial class MainWindow : Window
         };
         PreviewKeyDown += (_, args) =>
         {
-            if (args.Key == Key.F2)
+            if (NightBlack.Visibility == Visibility.Visible)
+            {
+                Wake_Click(this, args);
+                args.Handled = true;
+            }
+            else if (args.Key == Key.F2)
             {
                 args.Handled = true;
                 ShowSettings();
@@ -113,7 +143,11 @@ public partial class MainWindow : Window
 
     internal bool StartInFrame => settings.StartInFrame;
     internal bool Paused => paused;
-    internal string OneDriveStatus => playback.Status;
+    internal string OneDriveStatus => playback.LastRefresh is { } last
+        ? $"{playback.Status} · Ultimo aggiornamento {last.LocalDateTime:g}"
+        : playback.Status;
+    internal Task<IReadOnlyList<string>> BrowseFoldersAsync(string path, CancellationToken token) =>
+        rclone.ListFoldersAsync(path, token);
     internal string DashboardStatus => dashboard.Status;
     internal string? PhotoError => photoError;
     internal string? StartupError => storage.StartupError;
@@ -132,12 +166,15 @@ public partial class MainWindow : Window
         if (closed || settingsWindow is not null)
             return;
         mode = Mode.Frame;
+        CloseCommands();
         dashboard.SetActive(false);
         HomeLayer.Visibility = Visibility.Hidden;
         PhotoLayer.Visibility = Visibility.Visible;
         slideDue = DateTime.UtcNow.AddSeconds(settings.SlideSeconds);
         preloadDue = DateTime.MinValue;
         ShowFullscreen();
+        UpdatePhotoInfo();
+        UpdateCommands();
     }
 
     private void ShowHome()
@@ -145,11 +182,14 @@ public partial class MainWindow : Window
         if (closed || settingsWindow is not null)
             return;
         mode = Mode.Home;
+        CloseCommands();
         PhotoLayer.Visibility = Visibility.Hidden;
         HomeLayer.Visibility = Visibility.Visible;
         RecordInteraction();
         ShowFullscreen();
         dashboard.SetActive(true);
+        UpdatePhotoInfo();
+        UpdateCommands();
     }
 
     private void ShowFullscreen()
@@ -180,6 +220,8 @@ public partial class MainWindow : Window
     private void LeaveForDesktop(bool showShell)
     {
         mode = Mode.Desktop;
+        CloseCommands();
+        UpdateCommands();
         dashboard.SetActive(false);
         Topmost = false;
         HomeLayer.Visibility = Visibility.Hidden;
@@ -213,6 +255,9 @@ public partial class MainWindow : Window
         if (closed || mode == Mode.Desktop && settingsWindow is null)
             return;
         DateTime now = DateTime.UtcNow;
+        UpdateNightMode();
+        if (CommandMenu.Visibility == Visibility.Visible && now >= commandsUntil && !CommandMenu.IsMouseOver)
+            CloseCommands();
         if (!refreshing && now >= catalogDue)
             _ = RefreshCatalogAsync();
 
@@ -226,12 +271,13 @@ public partial class MainWindow : Window
             dashboard.TimerTick();
         }
 
-        if (mode != Mode.Frame || paused && current is not null || fading || settingsWindow is not null)
+        if (mode != Mode.Frame || fading || settingsWindow is not null ||
+            paused && current is not null && !showNextRequested)
             return;
-        if (next is not null && (current is null || slideDue <= now))
+        if ((forwardPhoto ?? next) is not null && (current is null || showNextRequested || slideDue <= now))
             ShowNext(now);
         if (!fading && next is null && !preparing && preloadDue <= now &&
-            playback.HasCandidates(settings.MinimumAspectRatio))
+            (useCachedPhotos || playback.HasCandidates(settings.PhotoRatioFilter)))
             _ = PreloadAsync();
     }
 
@@ -247,10 +293,20 @@ public partial class MainWindow : Window
             await playback.RefreshAsync(snapshot, token);
             if (token.IsCancellationRequested || closed)
                 return;
-            if (next is { } staged && !playback.Contains(staged.Item))
+            useCachedPhotos = playback.RefreshFailed;
+            if (next is { } staged && !IsPlayable(staged))
                 next = null;
-            if (current is not null && !playback.Contains(current))
+            if (previousPhoto is { } previous && !IsPlayable(previous))
+                previousPhoto = null;
+            if (forwardPhoto is { } forward && !IsPlayable(forward))
+                forwardPhoto = null;
+            if (!useCachedPhotos && current is not null && !playback.Contains(current))
                 ClearPhotos();
+            else if (!useCachedPhotos && showingCachedPhoto)
+            {
+                showingCachedPhoto = false;
+                UpdatePhotoInfo();
+            }
             preloadDue = DateTime.MinValue;
             photoError = null;
             UpdateFrameStatus();
@@ -287,7 +343,28 @@ public partial class MainWindow : Window
             var screen = Forms.Screen.PrimaryScreen;
             int width = screen?.Bounds.Width ?? 2736;
             int height = screen?.Bounds.Height ?? 1824;
-            var result = await playback.PrepareNextAsync(snapshot, width, height, current, token);
+            var currentItem = current;
+            DisplayPhoto? result = useCachedPhotos
+                ? await Task.Run(() => photoCache.Load(snapshot, currentItem, cachedPhotosSeen, token), token) : null;
+            try
+            {
+                if (result is null && playback.HasCandidates(snapshot.PhotoRatioFilter))
+                    result = await playback.PrepareNextAsync(snapshot, width, height, currentItem, token);
+            }
+            catch (Exception error) when (!token.IsCancellationRequested &&
+                error is HttpRequestException or OperationCanceledException or RcloneException or GraphRequestException
+                    or SignInRequiredException or Microsoft.Identity.Client.MsalException)
+            {
+                useCachedPhotos = true;
+                photoError = PhotoPlayback.Describe(error);
+                storage.Log("Lettura foto OneDrive", error);
+                result = await Task.Run(() => photoCache.Load(snapshot, currentItem, cachedPhotosSeen, token), token);
+                if (result is null)
+                    throw;
+            }
+
+            if (result is { FromCache: false } downloaded)
+                await Task.Run(() => photoCache.Remember(snapshot, downloaded, token), token);
             if (token.IsCancellationRequested || closed)
                 return;
             next = result;
@@ -316,13 +393,31 @@ public partial class MainWindow : Window
 
     private void ShowNext(DateTime now)
     {
-        var photo = next!;
-        next = null;
-        if (!playback.Contains(photo.Item))
+        var photo = forwardPhoto ?? next!;
+        if (forwardPhoto is not null)
+            forwardPhoto = null;
+        else
+            next = null;
+        showNextRequested = false;
+        if (!IsPlayable(photo))
             return;
+        previousPhoto = CaptureCurrent();
+        Display(photo, now);
+    }
+
+    private DisplayPhoto? CaptureCurrent() => current is not null && FrontPhoto.Source is BitmapSource bitmap
+        ? new DisplayPhoto(current, bitmap, showingCachedPhoto) : null;
+
+    private bool IsPlayable(DisplayPhoto photo) => playback.Contains(photo.Item) || photo.FromCache && useCachedPhotos;
+
+    private void Display(DisplayPhoto photo, DateTime now)
+    {
         BackPhoto.Source = FrontPhoto.Source;
         FrontPhoto.Source = photo.Bitmap;
         current = photo.Item;
+        showingCachedPhoto = photo.FromCache;
+        UpdatePhotoInfo();
+        UpdateCommands();
         slideDue = now.AddSeconds(settings.SlideSeconds);
         EmptyFrame.Visibility = Visibility.Collapsed;
         if (BackPhoto.Source is null || settings.FadeMilliseconds == 0)
@@ -338,6 +433,7 @@ public partial class MainWindow : Window
         {
             BackPhoto.Source = null;
             fading = false;
+            UpdateCommands();
         };
         FrontPhoto.BeginAnimation(OpacityProperty, animation);
     }
@@ -346,6 +442,9 @@ public partial class MainWindow : Window
     {
         current = null;
         next = null;
+        previousPhoto = forwardPhoto = null;
+        showNextRequested = showingCachedPhoto = false;
+        UpdatePhotoInfo();
         FrontPhoto.BeginAnimation(OpacityProperty, null);
         FrontPhoto.Source = null;
         BackPhoto.Source = null;
@@ -356,6 +455,7 @@ public partial class MainWindow : Window
     internal void SetPaused(bool pause)
     {
         paused = pause;
+        PauseButton.Content = paused ? "Riprendi presentazione" : "Pausa presentazione";
         pauseMenu.Text = paused ? "Riprendi presentazione" : "Sospendi presentazione";
         slideDue = DateTime.UtcNow.AddSeconds(settings.SlideSeconds);
     }
@@ -380,14 +480,22 @@ public partial class MainWindow : Window
         bool sourceChanged = !before.SequenceEqual(after) || previous.UsesRclone != updated.UsesRclone ||
             !string.Equals(previous.MicrosoftClientId, updated.MicrosoftClientId, StringComparison.OrdinalIgnoreCase) ||
             previous.AllowSharedLinkScope != updated.AllowSharedLinkScope;
-        bool ratioChanged = previous.MinimumAspectRatio != updated.MinimumAspectRatio;
+        bool ratioChanged = previous.PhotoRatioFilter != updated.PhotoRatioFilter;
+        bool nightChanged = (previous.NightEnabled, previous.NightBlackScreen, previous.NightStart, previous.NightEnd) !=
+            (updated.NightEnabled, updated.NightBlackScreen, updated.NightStart, updated.NightEnd);
 
         CancelWork();
         settings = updated;
         if (sourceChanged)
             playback.Reset();
-        if (sourceChanged || ratioChanged)
+        if (sourceChanged || ratioChanged || previous.CachePhotos && !updated.CachePhotos)
+        {
+            ResetCachedPhotos();
             ClearPhotos();
+        }
+        if (nightChanged)
+            nightOverridden = false;
+        UpdatePhotoInfo();
         dashboard.Configure(updated.DashboardUri);
         ApplyPhotoFit();
         slideDue = DateTime.UtcNow.AddSeconds(settings.SlideSeconds);
@@ -405,6 +513,7 @@ public partial class MainWindow : Window
             return;
         CancelWork();
         playback.Reset();
+        ResetCachedPhotos();
         ClearPhotos();
         RefreshSoon();
     }
@@ -412,6 +521,10 @@ public partial class MainWindow : Window
     internal async Task SignInAsync(CancellationToken token)
     {
         await signIn.ConnectAsync(settings, token);
+        CancelWork();
+        playback.Reset();
+        ResetCachedPhotos();
+        ClearPhotos();
         RefreshSoon();
     }
 
@@ -423,12 +536,20 @@ public partial class MainWindow : Window
         {
             await signIn.DisconnectAsync(settings.MicrosoftClientId, token);
             playback.Reset();
+            ResetCachedPhotos();
             ClearPhotos();
         }
         finally
         {
             RefreshSoon();
         }
+    }
+
+    private void ResetCachedPhotos()
+    {
+        useCachedPhotos = false;
+        cachedPhotosSeen.Clear();
+        photoCache.Clear();
     }
 
     internal void RefreshSoon() => catalogDue = DateTime.MinValue;
@@ -456,9 +577,10 @@ public partial class MainWindow : Window
         EmptyFrame.Visibility = current is null ? Visibility.Visible : Visibility.Collapsed;
         FrameStatusText.Text = storage.StartupError ?? photoError ??
             (playback.CatalogCount == 0 ? playback.Status :
-                playback.HasCandidates(settings.MinimumAspectRatio)
-                    ? "Cerco una foto orizzontale tra le sorgenti abilitate…"
-                    : "Nessuna foto orizzontale rispetta il rapporto minimo impostato.");
+                playback.HasCandidates(settings.PhotoRatioFilter)
+                    ? "Cerco una foto tra le cartelle abilitate…"
+                    : "Nessuna foto rispetta le opzioni di formato.");
+        UpdateCommands();
     }
 
     private void UpdateHomeStatus()
@@ -480,6 +602,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        CloseCommands();
+        CommandPopup.IsOpen = false;
         var dialog = new SettingsWindow(this, settings);
         if (IsVisible)
         {
@@ -493,6 +617,7 @@ public partial class MainWindow : Window
             settingsWindow = null;
             Topmost = mode != Mode.Desktop;
             RecordInteraction();
+            UpdateCommands();
         }
     }
 
@@ -506,11 +631,121 @@ public partial class MainWindow : Window
 
     private void Photo_MouseUp(object sender, MouseButtonEventArgs args)
     {
-        if (current is not null || args.OriginalSource is not System.Windows.Controls.Button)
+        if (current is not null)
             ShowHome();
     }
 
-    private void Frame_Click(object sender, RoutedEventArgs args) => ShowFrame();
+    private void Commands_Click(object sender, RoutedEventArgs args)
+    {
+        CommandMenu.Visibility = CommandMenu.Visibility == Visibility.Visible ? Visibility.Collapsed : Visibility.Visible;
+        commandsUntil = DateTime.UtcNow.AddSeconds(8);
+        RecordInteraction();
+        UpdateCommands();
+        PositionCommands();
+    }
+
+    private void CloseCommands() => CommandMenu.Visibility = Visibility.Collapsed;
+
+    private void PositionCommands()
+    {
+        if (!CommandPopup.IsOpen)
+            return;
+        double offset = CommandPopup.HorizontalOffset;
+        CommandPopup.HorizontalOffset = offset + 1;
+        CommandPopup.HorizontalOffset = offset;
+    }
+
+    private void UpdateCommands()
+    {
+        CommandPopup.IsOpen = IsLoaded && IsVisible && !closed && mode != Mode.Desktop &&
+            settingsWindow is null && NightBlack.Visibility != Visibility.Visible;
+        SwitchModeButton.Content = mode == Mode.Home ? "Cornice fotografica" : "Home Assistant";
+        SlideControls.Visibility = mode == Mode.Frame ? Visibility.Visible : Visibility.Collapsed;
+        PreviousButton.IsEnabled = previousPhoto is not null && !fading;
+        NextButton.IsEnabled = current is not null && !fading;
+    }
+
+    private void SwitchMode_Click(object sender, RoutedEventArgs args)
+    {
+        if (mode == Mode.Home)
+            ShowFrame();
+        else
+            ShowHome();
+    }
+
+    private void Pause_Click(object sender, RoutedEventArgs args)
+    {
+        SetPaused(!paused);
+        CloseCommands();
+    }
+
+    private void Previous_Click(object sender, RoutedEventArgs args)
+    {
+        if (fading || previousPhoto is not { } previous || !IsPlayable(previous))
+            return;
+        previousPhoto = null;
+        forwardPhoto = CaptureCurrent();
+        showNextRequested = false;
+        CloseCommands();
+        Display(previous, DateTime.UtcNow);
+    }
+
+    private void Next_Click(object sender, RoutedEventArgs args)
+    {
+        showNextRequested = true;
+        preloadDue = DateTime.MinValue;
+        CloseCommands();
+    }
+
+    private void RetryPhotos_Click(object sender, RoutedEventArgs args)
+    {
+        preloadDue = DateTime.MinValue;
+        CancelWork();
+        RefreshSoon();
+    }
+
+    private void UpdatePhotoInfo()
+    {
+        var label = new List<string>();
+        if (current is not null && mode == Mode.Frame)
+        {
+            if (settings.ShowPhotoName)
+                label.Add(current.Name);
+            if (settings.ShowPhotoDate && current.PhotoDate is { } date)
+                label.Add(date.LocalDateTime.ToString("d"));
+            if (showingCachedPhoto)
+                label.Add("Foto salvata per l’uso offline");
+        }
+        PhotoInfo.Text = string.Join(" · ", label);
+        PhotoInfoPanel.Visibility = label.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void UpdateNightMode()
+    {
+        bool scheduled = settings.IsNight(TimeOnly.FromDateTime(DateTime.Now));
+        if (!scheduled)
+            nightOverridden = false;
+        bool active = scheduled && !nightOverridden && settingsWindow is null && mode != Mode.Desktop;
+        if (active && !nightWasActive && mode == Mode.Home)
+            ShowFrame();
+        nightWasActive = active;
+        var black = active && settings.NightBlackScreen && mode == Mode.Frame ? Visibility.Visible : Visibility.Collapsed;
+        if (NightBlack.Visibility != black)
+        {
+            NightBlack.Visibility = black;
+            if (black == Visibility.Visible)
+                NightBlack.Focus();
+            UpdateCommands();
+        }
+        NightDim.Visibility = active && mode == Mode.Frame && !settings.NightBlackScreen
+            ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void Wake_Click(object sender, RoutedEventArgs args)
+    {
+        nightOverridden = true;
+        UpdateNightMode();
+    }
     private void Minimize_Click(object sender, RoutedEventArgs args) => LeaveForDesktop(showShell: false);
     private void Exit_Click(object sender, RoutedEventArgs args) => Close();
     private void Windows_Click(object sender, RoutedEventArgs args) => LeaveForDesktop(showShell: true);
@@ -520,6 +755,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         closed = true;
+        CommandPopup.IsOpen = false;
         timer.Stop();
         work.Cancel();
         work.Dispose();

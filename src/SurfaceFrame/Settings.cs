@@ -20,6 +20,21 @@ public sealed class FrameSettings
     public double MinimumAspectRatio { get; set; } = 1;
     public bool Shuffle { get; set; } = true;
     public bool FillScreen { get; set; } = true;
+    public bool IncludeVerticalPhotos { get; set; }
+    public bool ShowPhotoName { get; set; }
+    public bool ShowPhotoDate { get; set; }
+    public bool CachePhotos { get; set; } = true;
+    public bool NightEnabled { get; set; }
+    public bool NightBlackScreen { get; set; }
+    public TimeOnly NightStart { get; set; } = new(23, 0);
+    public TimeOnly NightEnd { get; set; } = new(7, 0);
+
+    internal double PhotoRatioFilter => IncludeVerticalPhotos ? 0 : MinimumAspectRatio;
+
+    internal bool IsNight(TimeOnly time) => NightEnabled && (NightStart < NightEnd
+        ? time >= NightStart && time < NightEnd
+        : time >= NightStart || time < NightEnd);
+
     public bool AutoStart { get; set; }
     public bool StartInFrame { get; set; } = true;
 
@@ -40,6 +55,8 @@ public sealed class FrameSettings
             CatalogMinutes is < 1 or > 1440 || FadeMilliseconds is < 0 or > 2000 ||
             !double.IsFinite(MinimumAspectRatio) || MinimumAspectRatio is < 1 or > 10)
             throw new ArgumentException("Controlla gli intervalli e il rapporto minimo delle foto.");
+        if (NightEnabled && NightStart == NightEnd)
+            throw new ArgumentException("Gli orari di inizio e fine della modalità notte devono essere diversi.");
         if (Sources.Any(source => source is null || !FolderSource.IsValid(source.Address)))
             throw new ArgumentException("Usa un percorso come /Foto/Cornice o un link di OneDrive personale.");
         if (Sources.Select(source => source.Id).Distinct().Count() != Sources.Count)

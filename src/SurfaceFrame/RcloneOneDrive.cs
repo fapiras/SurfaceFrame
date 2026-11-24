@@ -95,9 +95,21 @@ internal sealed class RcloneOneDrive(string storageRoot, HttpClient graph)
             long bytes = entry.GetProperty("Size").GetInt64();
             string revision = ReadString(entry, "ModTime") + "/" + bytes;
             photos.Add(new PhotoItem("rclone", id.Length == 0 ? remotePath : id, name, revision,
-                bytes, 0, 0, 0, RclonePath: remotePath));
+                bytes, 0, 0, 0, RclonePath: remotePath,
+                PhotoDate: DateTimeOffset.TryParse(ReadString(entry, "ModTime"), out var modified) ? modified : null));
         }
         return photos;
+    }
+
+    internal async Task<IReadOnlyList<string>> ListFoldersAsync(string path, CancellationToken token)
+    {
+        using var data = await ReadAsync(CatalogLimit, token, "lsjson", RemoteName + ":" + path.Trim('/'), "--dirs-only");
+        using var listing = await JsonDocument.ParseAsync(data, cancellationToken: token);
+        return listing.RootElement.EnumerateArray()
+            .Select(entry => ReadString(entry, "Path"))
+            .Where(name => name.Length > 0 && !name.Contains('/') && FolderSource.IsValid("/" + name))
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
     }
 
     internal Task<MemoryStream> GetOriginalAsync(PhotoItem item, CancellationToken token)

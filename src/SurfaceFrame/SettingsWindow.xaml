@@ -1,14 +1,14 @@
 <Window x:Class="SurfaceFrame.SettingsWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Impostazioni · Surface Frame" Width="870" Height="700" MinWidth="560" MinHeight="465"
-        WindowStartupLocation="CenterScreen" ShowInTaskbar="False" Background="#10171E" Foreground="{StaticResource Text}"
+        Title="Impostazioni · Surface Frame" Width="870" Height="700" MinWidth="650" MinHeight="465"
+        WindowStartupLocation="CenterScreen" ShowInTaskbar="False" Background="{StaticResource Canvas}" Foreground="{StaticResource Text}"
         FontFamily="Segoe UI" FontSize="15">
     <Window.Resources>
         <Style TargetType="TextBox">
             <Setter Property="Foreground" Value="{StaticResource Text}" />
             <Setter Property="Background" Value="#0E161D" />
-            <Setter Property="BorderBrush" Value="#536675" />
+            <Setter Property="BorderBrush" Value="{StaticResource Outline}" />
             <Setter Property="Padding" Value="9,6" />
             <Setter Property="MinHeight" Value="35" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -23,13 +23,13 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="TabBackground" Background="#222F3A" CornerRadius="8,8,0,0" Margin="0,0,5,0"
+                        <Border x:Name="TabBackground" Background="{StaticResource Panel}" CornerRadius="8,8,0,0" Margin="0,0,5,0"
                                 Padding="15,9">
                             <ContentPresenter ContentSource="Header"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="TabBackground" Property="Background" Value="#45616E"/>
+                                <Setter TargetName="TabBackground" Property="Background" Value="#374D70"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -53,8 +53,8 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <TextBlock Text="Impostazioni" FontSize="28" FontWeight="SemiBold" Margin="0,0,0,17" />
-        <TabControl Grid.Row="1" Background="{StaticResource Panel}" BorderBrush="#45616E">
-            <TabItem Header="OneDrive">
+        <TabControl Grid.Row="1" Background="{StaticResource Panel}" BorderBrush="{StaticResource Outline}">
+            <TabItem Header="Cartelle OneDrive">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="16,6,16,16">
                         <TextBlock Style="{StaticResource FieldLabel}" Text="OneDrive personale" />
@@ -91,7 +91,33 @@
                             </StackPanel>
                         </Expander>
                         <TextBlock Style="{StaticResource FieldLabel}" Text="Cartelle" />
-                        <TextBlock Style="{StaticResource Help}" Text="Per il tuo OneDrive, inserisci un percorso come /Foto/Cornice." Margin="0,0,0,6" />
+                        <Button x:Name="BrowseButton" Style="{StaticResource Action}" Content="Sfoglia OneDrive"
+                                Click="Browse_Click" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                        <Expander x:Name="FolderBrowser" Visibility="Collapsed" IsExpanded="True" Foreground="{StaticResource Text}" Margin="0,0,0,9">
+                            <Expander.Header>
+                                <TextBlock x:Name="BrowsePath" TextTrimming="CharacterEllipsis" MaxWidth="440" />
+                            </Expander.Header>
+                            <StackPanel Margin="0,6,0,0">
+                                <ListBox x:Name="BrowseList" MaxHeight="160" MinHeight="44"
+                                         Background="{StaticResource Canvas}" Foreground="{StaticResource Text}"
+                                         BorderBrush="{StaticResource Outline}" AutomationProperties.Name="Sottocartelle OneDrive">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="ListBoxItem">
+                                            <Setter Property="MinHeight" Value="41" />
+                                            <Setter Property="Padding" Value="10,0" />
+                                            <Setter Property="VerticalContentAlignment" Value="Center" />
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                </ListBox>
+                                <WrapPanel Margin="0,7,0,0">
+                                    <Button x:Name="BrowseUp" Style="{StaticResource Action}" Content="Indietro" Click="BrowseUp_Click" Margin="0,0,7,4" />
+                                    <Button x:Name="BrowseOpen" Style="{StaticResource Action}" Content="Apri selezionata" Click="BrowseOpen_Click" Margin="0,0,7,4" />
+                                    <Button x:Name="BrowseSelect" Style="{StaticResource Action}" Content="Aggiungi questa cartella" Click="BrowseSelect_Click" />
+                                </WrapPanel>
+                                <TextBlock x:Name="BrowseStatus" Style="{StaticResource Help}" Margin="0,5,0,0" />
+                            </StackPanel>
+                        </Expander>
+                        <TextBlock Style="{StaticResource Help}" Text="Puoi anche inserire il percorso OneDrive a mano, ad esempio /Foto/Cornice." Margin="0,0,0,6" />
                         <DockPanel LastChildFill="True">
                             <Button DockPanel.Dock="Right" Style="{StaticResource Action}" Content="Aggiungi"
                                     Click="AddFolder_Click" Margin="7,0,0,0" />
@@ -126,7 +152,7 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
-            <TabItem Header="Fotografie">
+            <TabItem Header="Presentazione">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="16,8,16,16">
                         <TextBlock Style="{StaticResource FieldLabel}" Text="Secondi tra le fotografie" />
@@ -139,7 +165,8 @@
                         <TextBox x:Name="MinimumRatio" Width="125" HorizontalAlignment="Left"
                                  AutomationProperties.Name="Rapporto minimo larghezza diviso altezza" />
                         <CheckBox x:Name="Shuffle" Content="Ordine casuale senza ripetizioni nel ciclo" Margin="0,12,0,0" />
-                        <CheckBox x:Name="FillScreen" Content="Riempi lo schermo con ritaglio centrato" />
+                        <CheckBox x:Name="IncludeVerticalPhotos" Content="Includi anche foto verticali e quadrate" />
+                        <CheckBox x:Name="CachePhotos" Content="Salva una copia ridotta delle foto recenti per l’uso offline" />
                         <CheckBox x:Name="Pause" Content="Sospendi la presentazione fino a ripresa manuale" />
                     </StackPanel>
                 </ScrollViewer>
@@ -154,7 +181,28 @@
                                  AutomationProperties.Name="Secondi di inattività" />
                         <TextBlock x:Name="DashboardStatusText" Style="{StaticResource Help}" Margin="0,17,0,0" />
                         <TextBlock Style="{StaticResource Help}" Margin="0,15,0,0"
-                                   Text="Il logo Windows apre il desktop. Il pulsante Cornice riporta alle foto." />
+                                   Text="Apri Comandi in basso a destra per tornare alla cornice." />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="Aspetto">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="16,8,16,16">
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Foto a schermo intero" />
+                        <CheckBox x:Name="FillScreen" Content="Riempi lo schermo con ritaglio centrato" />
+                        <TextBlock Style="{StaticResource Help}" Text="Togli la spunta per visualizzare tutta la foto." />
+                        <CheckBox x:Name="ShowPhotoName" Content="Mostra il nome del file" />
+                        <CheckBox x:Name="ShowPhotoDate" Content="Mostra la data della foto, quando disponibile" />
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Modalità notte" />
+                        <CheckBox x:Name="NightEnabled" Content="Attiva a orari programmati" />
+                        <CheckBox x:Name="NightBlackScreen" Content="Mostra uno schermo nero fino al prossimo tocco" />
+                        <TextBlock Style="{StaticResource Help}" Text="Con lo schermo nero disattivato, la cornice mostra le foto attenuate." />
+                        <WrapPanel Margin="0,9,0,0">
+                            <TextBlock Text="Dalle" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBox x:Name="NightStart" Width="66" AutomationProperties.Name="Inizio modalità notte" />
+                            <TextBlock Text="alle" VerticalAlignment="Center" Margin="10,0,8,0" />
+                            <TextBox x:Name="NightEnd" Width="66" AutomationProperties.Name="Fine modalità notte" />
+                        </WrapPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -166,12 +214,14 @@
                         <TextBlock Style="{StaticResource FieldLabel}" Text="Aggiornamenti" />
                         <TextBlock x:Name="UpdateStatusText" Style="{StaticResource Help}" />
                         <TextBlock x:Name="ReleaseNotes" Style="{StaticResource Help}" Margin="0,8,0,0" Visibility="Collapsed" />
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <WrapPanel Margin="0,10,0,0">
                             <Button x:Name="CheckUpdateButton" Style="{StaticResource Action}" Content="Controlla aggiornamenti"
                                     Click="CheckUpdate_Click" />
                             <Button x:Name="ApplyUpdateButton" Style="{StaticResource Action}" Content="Aggiorna e riavvia"
                                     Click="ApplyUpdate_Click" Margin="8,0,0,0" Visibility="Collapsed" />
-                        </StackPanel>
+                            <Button x:Name="OpenReleasesButton" Style="{StaticResource Action}" Content="Apri release GitHub"
+                                    Click="OpenReleases_Click" Margin="8,0,0,0" Visibility="Collapsed" />
+                        </WrapPanel>
                         <TextBlock Style="{StaticResource FieldLabel}" Text="Diagnostica" />
                         <TextBlock x:Name="DiagnosticText" Style="{StaticResource Help}" />
                         <Button Style="{StaticResource Action}" Content="Apri il log" Click="Logs_Click"

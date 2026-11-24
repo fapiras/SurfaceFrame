@@ -16,6 +16,9 @@ internal static class Program
         CheckUpdates();
         CheckOneDriveOptions();
         CheckDashboardInactive();
+        CheckNightSchedule();
+        CheckImage(120, 80, 8, ".jpg", true, 0);
+        CheckImage(80, 80, 1, ".jpg", true, 0);
         CheckImage(120, 80, 1, ".jpg", true);
         CheckImage(80, 120, 6, ".jpg", true);
         CheckImage(120, 80, 8, ".jpg", false);
@@ -87,6 +90,21 @@ internal static class Program
         Console.WriteLine("OK: Home Assistant non inizializza WebView2 in modalità cornice.");
     }
 
+    private static void CheckNightSchedule()
+    {
+        var settings = new FrameSettings { NightEnabled = true };
+        if (!settings.IsNight(new TimeOnly(23, 0)) || !settings.IsNight(new TimeOnly(0, 0)) ||
+            settings.IsNight(new TimeOnly(7, 0)) || settings.IsNight(new TimeOnly(12, 0)))
+            throw new InvalidOperationException("Orari notte dopo mezzanotte errati.");
+        settings.NightStart = new TimeOnly(10, 0);
+        settings.NightEnd = new TimeOnly(11, 0);
+        if (!settings.IsNight(new TimeOnly(10, 30)) || settings.IsNight(new TimeOnly(0, 0)))
+            throw new InvalidOperationException("Orari notte nello stesso giorno errati.");
+        settings.NightEnabled = false;
+        if (settings.IsNight(new TimeOnly(10, 30)))
+            throw new InvalidOperationException("La modalità notte disattivata risulta attiva.");
+    }
+
     private static void CheckImage(int width, int height, ushort orientation, string extension,
         bool expectLandscape, double threshold = 1)
     {
@@ -94,7 +112,7 @@ internal static class Program
         var result = PhotoDecoder.Decode(data, threshold, 2736, 1824, false, CancellationToken.None);
         bool visible = result.Bitmap is not null;
         if (visible != expectLandscape || visible &&
-            (result.Bitmap!.PixelWidth <= result.Bitmap.PixelHeight || !result.Bitmap.IsFrozen))
+            (threshold != 0 && result.Bitmap!.PixelWidth <= result.Bitmap.PixelHeight || !result.Bitmap!.IsFrozen))
             throw new InvalidOperationException($"Filtro errato per {extension} {width}x{height} EXIF {orientation}.");
     }
 

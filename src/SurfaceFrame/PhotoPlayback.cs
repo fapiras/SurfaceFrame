@@ -7,7 +7,7 @@ using System.Net;
 
 namespace SurfaceFrame;
 
-internal sealed record DisplayPhoto(PhotoItem Item, BitmapSource Bitmap);
+internal sealed record DisplayPhoto(PhotoItem Item, BitmapSource Bitmap, bool FromCache = false);
 internal sealed record PhotoCompatibility(int Compatible, int Pending);
 
 internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn, OneDrive oneDrive, RcloneOneDrive rclone)
@@ -20,6 +20,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
     private HashSet<string> revisions = new(StringComparer.Ordinal);
     internal DateTimeOffset? RetryAt { get; private set; }
     internal string Status { get; private set; } = "Configura una cartella OneDrive.";
+    internal DateTimeOffset? LastRefresh { get; private set; }
     internal int CatalogCount => catalog.Count;
     internal bool Contains(PhotoItem item) => revisions.Contains(item.CacheKey);
     internal bool HasCandidates(double minimumRatio) =>
@@ -33,6 +34,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
         verifiedRatios.Clear();
         ReplaceCatalog(shuffle: false);
         RetryAt = null;
+        LastRefresh = null;
         Status = "Aggiornamento del catalogo OneDrive…";
     }
 
@@ -143,6 +145,8 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
 
         ReplaceCatalog(settings.Shuffle);
         RefreshFailed = failures > 0;
+        if (failures < active.Length)
+            LastRefresh = DateTimeOffset.Now;
         Status = failures switch
         {
             0 => $"OneDrive connesso · {catalog.Count} file immagine",
@@ -154,7 +158,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
     internal async Task<DisplayPhoto?> PrepareNextAsync(FrameSettings settings, int pixelWidth,
         int pixelHeight, PhotoItem? previous, CancellationToken cancellationToken)
     {
-        if (!HasCandidates(settings.MinimumAspectRatio))
+        if (!HasCandidates(settings.PhotoRatioFilter))
             return null;
 
         string accessToken = settings.UsesRclone ? "" : await signIn.GetTokenAsync(settings, cancellationToken);
@@ -167,15 +171,15 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
             var item = rotation.Next();
             if (item is null || !attempted.Add(item.Key))
                 break;
-            if (previous?.CacheKey == item.CacheKey || Aspect(item, settings.MinimumAspectRatio) is { } ratio &&
-                !Matches(ratio, settings.MinimumAspectRatio))
+            if (previous?.CacheKey == item.CacheKey || Aspect(item, settings.PhotoRatioFilter) is { } ratio &&
+                !Matches(ratio, settings.PhotoRatioFilter))
                 continue;
 
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(22));
             try
             {
-                var frame = await DecodeAsync(item, accessToken, settings.MinimumAspectRatio,
+                var frame = await DecodeAsync(item, accessToken, settings.PhotoRatioFilter,
                     pixelWidth, pixelHeight, timeout.Token);
                 cancellationToken.ThrowIfCancellationRequested();
                 if (Contains(item))
@@ -232,7 +236,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
     private double? Aspect(PhotoItem item, double threshold) => verifiedRatios.TryGetValue(item.CacheKey, out double ratio)
         ? ratio : item.AspectFromThumbnail(threshold) ?? item.AspectFromMetadata();
 
-    internal static bool Matches(double ratio, double threshold) => ratio > 1 && ratio >= threshold;
+    internal static bool Matches(double ratio, double threshold) => threshold == 0 ? ratio > 0 : ratio > 1 && ratio >= threshold;
 
     private void ReplaceCatalog(bool shuffle)
     {

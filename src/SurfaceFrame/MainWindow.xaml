@@ -3,15 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Surface Frame" Width="900" Height="600" WindowStyle="None" ResizeMode="NoResize"
         Background="Black" FontFamily="Segoe UI" ShowInTaskbar="True" WindowStartupLocation="Manual">
-    <Grid>
+    <Grid x:Name="SurfaceRoot">
         <Grid x:Name="HomeLayer" Visibility="Hidden">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="68" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="68" />
-            </Grid.RowDefinitions>
-            <Grid Grid.Row="1" x:Name="BrowserHost" Background="#111820" Visibility="Hidden" />
-            <Border Grid.Row="1" x:Name="HomeMessage" Visibility="Collapsed" Background="#18212A" CornerRadius="18"
+            <Grid x:Name="BrowserHost" Background="{StaticResource Canvas}" Visibility="Hidden" />
+            <Border x:Name="HomeMessage" Visibility="Collapsed" Background="{StaticResource Panel}" CornerRadius="18"
                     Padding="32" Margin="24" MaxWidth="540"
                     VerticalAlignment="Center" HorizontalAlignment="Center">
                 <StackPanel>
@@ -25,48 +20,62 @@
                     </WrapPanel>
                 </StackPanel>
             </Border>
-            <Border Grid.Row="2" Background="#EA18212A" BorderBrush="#435563" BorderThickness="1" CornerRadius="12"
-                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="14,0,0,0" Padding="5">
-                <StackPanel Orientation="Horizontal">
-                    <Button Style="{StaticResource Action}" Width="49" Padding="12,6" Click="Windows_Click"
-                            AutomationProperties.Name="Apri il desktop Windows" ToolTip="Desktop Windows">
-                        <Path Width="22" Height="22" Stretch="Uniform" Fill="#96DEEB"
-                              Data="M0,0 H9 V9 H0 Z M11,0 H20 V9 H11 Z M0,11 H9 V20 H0 Z M11,11 H20 V20 H11 Z"/>
-                    </Button>
-                    <Button Style="{StaticResource Action}" Content="Cornice" Click="Frame_Click" Margin="5,0,0,0"
-                            ToolTip="Torna alla cornice fotografica" />
-                    <Button Style="{StaticResource Action}" Width="49" Padding="10,6" Click="Settings_Click" Margin="5,0,0,0"
-                            AutomationProperties.Name="Impostazioni" ToolTip="Impostazioni">
-                        <TextBlock Text="&#x2699;" FontSize="21" />
-                    </Button>
-                </StackPanel>
-            </Border>
         </Grid>
         <Grid x:Name="PhotoLayer" Background="Black" ClipToBounds="True"
               PreviewTouchDown="Photo_TouchDown" MouseLeftButtonUp="Photo_MouseUp">
             <Image x:Name="BackPhoto" Stretch="UniformToFill" />
             <Image x:Name="FrontPhoto" Stretch="UniformToFill" />
-            <Border x:Name="EmptyFrame" Background="#111820" Padding="32">
+            <Border x:Name="EmptyFrame" Background="{StaticResource Canvas}" Padding="32">
                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="560">
                     <TextBlock Text="Surface Frame" Foreground="{StaticResource Text}" FontSize="32"
                                TextAlignment="Center" FontWeight="SemiBold" />
                     <TextBlock x:Name="FrameStatusText" Foreground="{StaticResource Muted}" TextWrapping="Wrap"
                                TextAlignment="Center" FontSize="16" LineHeight="24" Margin="0,12,0,20" />
-                    <Button Style="{StaticResource Action}" HorizontalAlignment="Center" Content="Impostazioni"
-                            Click="Settings_Click" />
+                    <WrapPanel HorizontalAlignment="Center">
+                        <Button Style="{StaticResource Action}" Content="Aggiorna foto" Click="RetryPhotos_Click" Margin="0,0,8,0" />
+                        <Button Style="{StaticResource Action}" Content="Impostazioni" Click="Settings_Click" />
+                    </WrapPanel>
                 </StackPanel>
             </Border>
         </Grid>
-        <Border Background="#EA18212A" BorderBrush="#435563" BorderThickness="1" CornerRadius="12"
-                HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,14,0" Padding="5"
-                Panel.ZIndex="10">
-            <StackPanel Orientation="Horizontal">
-                <Button Style="{StaticResource Action}" Content="Minimizza" MinHeight="44" MinWidth="96"
-                        Click="Minimize_Click" ToolTip="Torna al desktop lasciando aperto Surface Frame" />
-                <Button Style="{StaticResource Action}" Content="Chiudi" MinHeight="44" MinWidth="82"
-                        Click="Exit_Click" Margin="5,0,0,0" AutomationProperties.Name="Chiudi Surface Frame"
-                        ToolTip="Chiudi completamente Surface Frame" />
-            </StackPanel>
+        <Border x:Name="PhotoInfoPanel" Style="{StaticResource FloatingPanel}" Visibility="Collapsed"
+                IsHitTestVisible="False" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="16"
+                MaxWidth="580" Padding="13,8">
+            <TextBlock x:Name="PhotoInfo" Foreground="{StaticResource Text}" TextTrimming="CharacterEllipsis" />
         </Border>
+        <Border x:Name="NightDim" Background="#99000000" IsHitTestVisible="False" Visibility="Collapsed" />
+        <Button x:Name="NightBlack" Background="Black" Foreground="Black" Visibility="Collapsed" Click="Wake_Click"
+                AutomationProperties.Name="Riattiva lo schermo">
+            <Button.Template>
+                <ControlTemplate TargetType="Button">
+                    <Border Background="{TemplateBinding Background}" />
+                </ControlTemplate>
+            </Button.Template>
+        </Button>
+        <Popup x:Name="CommandPopup" Placement="Custom" PlacementTarget="{Binding ElementName=SurfaceRoot}"
+               AllowsTransparency="True" StaysOpen="True">
+            <StackPanel>
+                <Border x:Name="CommandMenu" Style="{StaticResource FloatingPanel}" Visibility="Collapsed"
+                        Padding="8" Margin="0,0,0,8" Width="244">
+                    <StackPanel>
+                        <Button x:Name="SwitchModeButton" Style="{StaticResource MenuAction}" Click="SwitchMode_Click"
+                                Content="Home Assistant" />
+                        <StackPanel x:Name="SlideControls">
+                            <Button x:Name="PreviousButton" Style="{StaticResource MenuAction}" Content="Foto precedente" Click="Previous_Click" />
+                            <Button x:Name="PauseButton" Style="{StaticResource MenuAction}" Content="Pausa presentazione" Click="Pause_Click" />
+                            <Button x:Name="NextButton" Style="{StaticResource MenuAction}" Content="Foto successiva" Click="Next_Click" />
+                        </StackPanel>
+                        <Button Style="{StaticResource MenuAction}" Content="Impostazioni" Click="Settings_Click" />
+                        <Button Style="{StaticResource MenuAction}" Content="Desktop Windows" Click="Windows_Click" />
+                        <Button Style="{StaticResource MenuAction}" Content="Minimizza" Click="Minimize_Click" />
+                        <Button Style="{StaticResource MenuAction}" Content="Chiudi Surface Frame" Click="Exit_Click" />
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource FloatingPanel}" HorizontalAlignment="Right" Padding="3">
+                    <Button x:Name="CommandButton" Style="{StaticResource Action}" Content="Comandi"
+                            Click="Commands_Click" AutomationProperties.Name="Comandi di Surface Frame" />
+                </Border>
+            </StackPanel>
+        </Popup>
     </Grid>
 </Window>

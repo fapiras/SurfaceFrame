@@ -22,6 +22,8 @@ internal sealed class UpdateService(LocalStorage storage)
     internal static Version CurrentVersion { get; } =
         Version.Parse(typeof(UpdateService).Assembly.GetName().Version!.ToString(3));
 
+    internal bool HasChannel => File.Exists(Path.Combine(AppContext.BaseDirectory, "update-channel.json"));
+
     internal string? LastResult
     {
         get

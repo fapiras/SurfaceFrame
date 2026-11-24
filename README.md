@@ -1,6 +1,6 @@
 # Surface Frame
 
-Cornice fotografica Windows x64 per Surface Pro 6. La presentazione legge le immagini da OneDrive personale. Un tocco apre la dashboard Home Assistant in WebView2. Il logo Windows in basso a sinistra apre il desktop e riduce Surface Frame nell’area di notifica.
+Cornice fotografica Windows x64 per Surface Pro 6. La presentazione legge le immagini da OneDrive personale. Un tocco apre la dashboard Home Assistant in WebView2. Il menu **Comandi**, in basso a destra, permette di aprire il desktop, cambiare modalità o gestire la presentazione.
 
 ## Primo avvio sul Surface
 
@@ -27,7 +27,7 @@ Il pacchetto iniziale 1.0.2 permette di provare l’app e vedere il pulsante. Pe
 ## OneDrive personale
 
 1. In **Impostazioni → OneDrive**, premi **Collega OneDrive**. Nel browser seleziona l’account Microsoft personale che contiene le foto e conferma la richiesta di rclone. Surface Frame include rclone e richiede accesso in sola lettura (`Files.Read` e `offline_access` per mantenere la sessione).
-2. Nella sezione **Cartelle** inserisci il percorso della cartella a partire dalla radice del tuo OneDrive, per esempio **/Foto/Cornice**. Premi **Aggiungi**, scegli se includere le sottocartelle e premi **Salva e aggiorna**.
+2. In **Cartelle OneDrive → Sfoglia OneDrive**, apri una cartella e premi **Aggiungi questa cartella**. Puoi anche digitare un percorso come **/Foto/Cornice**. Scegli se includere le sottocartelle e premi **Salva e aggiorna**.
 3. Surface Frame carica una foto alla volta in memoria e verifica che sia orizzontale. Con rclone legge gli originali fino a 48 MiB e applica il limite di decodifica di 60 MP. La compatibilità HEIC/HEIF dipende dal formato dell’originale e dal decoder. **Disconnetti OneDrive** rimuove la configurazione rclone di Surface Frame dal profilo Windows.
 
 [Rclone e OneDrive](https://rclone.org/onedrive/) · [Licenza rclone](rclone-LICENSE.txt)
@@ -46,18 +46,18 @@ La registrazione dell’applicazione in Microsoft Entra richiede un tenant in cu
 
 L’app impiega i metadati Graph e le dimensioni delle anteprime per stimare l’orientamento. Il contatore distingue le immagini compatibili da quelle da verificare. Le foto selezionate vengono filtrate durante la decodifica, dopo la lettura dell’orientamento EXIF dell’originale o con l’orientamento già applicato da OneDrive all’anteprima. Per i file HEIC/HEIF viene tentata un’anteprima o una conversione in JPEG da parte di Graph. La disponibilità per singola foto dipende da OneDrive.
 
-La modalità predefinita riempie il display con ritaglio centrato. Foto quadrate e verticali sono escluse. Durante la presentazione sono tenute in memoria la foto visibile e un’altra foto, usata per il precaricamento o la dissolvenza. Le richieste HTTPS leggono i dati direttamente in RAM. Per limitare i picchi, l’anteprima usa fino a 20 MiB, l’originale fino a 48 MiB e la decodifica scarta immagini oltre 60 MP se non è utilizzabile un’anteprima più piccola.
+La modalità predefinita riempie il display con ritaglio centrato. Puoi includere foto quadrate e verticali da **Presentazione**. In **Aspetto** scegli se ritagliare le immagini a schermo intero oppure vederle per intero e se mostrare nome e data. La data usa i dati disponibili dal servizio, che può fornire la data di modifica. Durante la presentazione l’app tiene in memoria le immagini necessarie per il passaggio e la navigazione tra le foto. La cache offline, disattivabile in **Presentazione**, conserva sul PC fino a 48 copie JPEG ridotte entro 96 MiB. Le richieste HTTPS leggono i dati direttamente in RAM. Per limitare i picchi, l’anteprima usa fino a 20 MiB, l’originale fino a 48 MiB e la decodifica scarta immagini oltre 60 MP se non è utilizzabile un’anteprima più piccola.
 
 ## Home Assistant e desktop
 
 1. In **Impostazioni → Home Assistant** inserisci l’URL completo della dashboard, copiato dalla barra del browser quando la plancia dedicata è aperta. Usa l’indirizzo finale, incluso il percorso, lo schema e l’eventuale porta.
 2. Salva e tocca la cornice. Esegui una prima volta l’accesso a Home Assistant nella finestra integrata. Il profilo WebView2 conserva la sessione.
 3. I tocchi, i clic, lo scorrimento e la tastiera nella dashboard rinnovano il timer. Dopo 120 secondi di inattività la cornice torna in primo piano. **Cornice** rientra subito nella presentazione.
-4. Premi il logo Windows per accedere al desktop. Per rientrare nella presentazione, fai doppio clic sull’icona Surface Frame nell’area di notifica oppure seleziona **Torna alla cornice** dal suo menu. Il timer opera solo nella modalità Home Assistant.
+4. Seleziona **Comandi → Desktop Windows** per accedere al desktop. Per rientrare nella presentazione, fai doppio clic sull’icona Surface Frame nell’area di notifica oppure seleziona **Torna alla cornice** dal suo menu. Il timer opera solo nella modalità Home Assistant.
 
-Dalla versione 1.0.3, **Minimizza** e **Chiudi** sono sempre visibili in alto a destra, sia sulla cornice sia sulla dashboard. **Minimizza** lascia l’app aperta nell’area di notifica. Fai doppio clic sulla sua icona per tornare alla cornice. **Chiudi** termina l’app.
+**Comandi** contiene le azioni per cambiare modalità, aprire le impostazioni, minimizzare e chiudere. Nella cornice trovi anche **Foto precedente**, **Pausa presentazione** e **Foto successiva**. Home Assistant usa tutta la finestra e il browser integrato parte quando apri la dashboard.
 
-La finestra usa il display principale di Windows. Sul Surface configurato per il solo pannello integrato questo coincide con lo schermo fisico da 12,3″. La dashboard conserva il layout e i controlli impostati in Home Assistant. Il browser integrato si avvia quando apri Home Assistant. I pulsanti di Surface Frame occupano fasce dedicate sopra e sotto la pagina.
+In **Aspetto → Modalità notte** puoi programmare una fascia in cui attenuare le foto o mostrare uno schermo nero. Un tocco sullo schermo nero ripristina la cornice e il termine della fascia conclude la modalità notte. Lo schermo nero mantiene Windows e Home Assistant in esecuzione.
 
 ## Manutenzione
 
@@ -81,7 +81,7 @@ La finestra usa il display principale di Windows. Sul Surface configurato per il
 | Aggiornamento e ripristino sul Surface | Da collaudare su Windows dopo la configurazione del canale GitHub e la pubblicazione di una versione successiva |
 | EXIF, touch, installazione e prova prolungata | La suite include fixture JPG, PNG e WebP. La sua esecuzione, il test su OneDrive reale e la prova end-to-end sul Surface sono ancora da eseguire |
 
-Per il collaudo finale, usa una cartella con almeno due orizzontali, una verticale, una quadrata e una ruotata via EXIF. Verifica la rotazione e poi esegui il percorso **foto → dashboard → desktop → area di notifica → cornice**. Controlla che l’uso della plancia rinnovi i 120 secondi e che dal desktop il ritorno sia manuale. Prova una temporanea disconnessione di rete e una sessione di alcune ore. Lo spegnimento programmato del display resta fuori dalla prima versione.
+Per il collaudo finale, usa una cartella con almeno due orizzontali, una verticale, una quadrata e una ruotata via EXIF. Verifica la rotazione e poi esegui il percorso **foto → dashboard → desktop → area di notifica → cornice**. Controlla che l’uso della plancia rinnovi i 120 secondi e che dal desktop il ritorno sia manuale. Prova una temporanea disconnessione di rete e una sessione di alcune ore. Controlla anche un intervallo della modalità notte a cavallo di mezzanotte.
 
 ## Riferimenti
 
