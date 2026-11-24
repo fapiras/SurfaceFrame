@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading.Tasks;
 using System.Security.Cryptography;
 using System.Text;
 using System.Net.Http;
@@ -14,6 +15,7 @@ internal static class Program
         CoreChecks.RunAsync().GetAwaiter().GetResult();
         CheckUpdates();
         CheckOneDriveOptions();
+        CheckDashboardInactive();
         CheckImage(120, 80, 1, ".jpg", true);
         CheckImage(80, 120, 6, ".jpg", true);
         CheckImage(120, 80, 8, ".jpg", false);
@@ -66,6 +68,23 @@ internal static class Program
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             });
         }
+    }
+
+    private static void CheckDashboardInactive()
+    {
+        var host = new System.Windows.Controls.Grid();
+        using var dashboard = new Dashboard(host, new LocalStorage());
+        dashboard.Configure(new Uri("http://127.0.0.1:8123/"));
+        dashboard.TimerTick();
+        if (dashboard.CanRetry || !dashboard.RetryAsync().IsCompletedSuccessfully || host.Children.Count != 0)
+            throw new InvalidOperationException("WebView2 è stato richiesto con Home Assistant chiuso.");
+        dashboard.SetActive(true);
+        if (!dashboard.CanRetry)
+            throw new InvalidOperationException("WebView2 non disponibile in modalità Home Assistant.");
+        dashboard.SetActive(false);
+        if (dashboard.CanRetry)
+            throw new InvalidOperationException("WebView2 richiesto al ritorno alla cornice.");
+        Console.WriteLine("OK: Home Assistant non inizializza WebView2 in modalità cornice.");
     }
 
     private static void CheckImage(int width, int height, ushort orientation, string extension,

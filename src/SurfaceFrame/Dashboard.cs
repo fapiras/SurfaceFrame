@@ -25,10 +25,11 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
         })();
         """;
 
-    private WebView2CompositionControl? view;
+    private WebView2? view;
     private CoreWebView2Environment? environment;
     private Uri? target;
     private bool disposed;
+    private bool active;
     private bool busy;
     private bool ready;
     private bool pendingNavigation;
@@ -38,7 +39,13 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
     internal event Action? Activity;
     internal string Status { get; private set; } = "Inserisci l’URL della dashboard nelle impostazioni.";
     internal bool Ready => ready;
-    internal bool CanRetry => target is not null && !busy;
+    internal bool CanRetry => active && target is not null && !busy;
+
+    internal void SetActive(bool visible)
+    {
+        active = visible;
+        Changed?.Invoke();
+    }
 
     internal void Configure(Uri? address)
     {
@@ -60,7 +67,7 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
 
     internal void TimerTick()
     {
-        if (target is not null && !busy && retryAt <= DateTime.UtcNow)
+        if (CanRetry && retryAt <= DateTime.UtcNow)
             _ = NavigateAsync();
     }
 
@@ -68,7 +75,7 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
 
     private async Task NavigateAsync()
     {
-        if (disposed || busy || target is null)
+        if (disposed || !CanRetry)
             return;
         busy = true;
         ready = false;
@@ -82,7 +89,12 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
                 environment ??= await CoreWebView2Environment.CreateAsync(userDataFolder: Path.Combine(storage.Root, "home-assistant"));
                 if (disposed || target is null)
                     return;
-                var control = new WebView2CompositionControl { DefaultBackgroundColor = System.Drawing.Color.FromArgb(17, 24, 32) };
+                if (!active)
+                {
+                    pendingNavigation = true;
+                    return;
+                }
+                var control = new WebView2 { DefaultBackgroundColor = System.Drawing.Color.FromArgb(17, 24, 32) };
                 view = control;
                 host.Children.Add(control);
                 await control.EnsureCoreWebView2Async(environment);
@@ -102,8 +114,9 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
 
             if (!disposed && target is not null)
             {
-                pendingNavigation = false;
-                view!.CoreWebView2.Navigate(target.AbsoluteUri);
+                pendingNavigation = !active;
+                if (active)
+                    view!.CoreWebView2.Navigate(target.AbsoluteUri);
             }
         }
         catch (WebView2RuntimeNotFoundException error)
@@ -177,9 +190,10 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
             CoreWebView2ProcessFailedKind.RenderProcessExited or CoreWebView2ProcessFailedKind.RenderProcessUnresponsive))
             return;
 
+        var failedView = view;
         host.Dispatcher.BeginInvoke(() =>
         {
-            if (disposed)
+            if (disposed || failedView is null || failedView != view)
                 return;
             ResetView();
             retryAt = DateTime.UtcNow.AddSeconds(5);
@@ -201,12 +215,20 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
     private void ResetView()
     {
         ready = false;
-        if (view is null)
-            return;
-        host.Children.Remove(view);
-        view.Dispose();
+        var previous = view;
         view = null;
         environment = null;
+        if (previous is null)
+            return;
+        try
+        {
+            host.Children.Remove(previous);
+            previous.Dispose();
+        }
+        catch (Exception error)
+        {
+            storage.Log("Chiusura WebView2", error);
+        }
     }
 
     public void Dispose()

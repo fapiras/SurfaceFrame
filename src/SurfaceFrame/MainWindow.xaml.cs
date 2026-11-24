@@ -132,6 +132,7 @@ public partial class MainWindow : Window
         if (closed || settingsWindow is not null)
             return;
         mode = Mode.Frame;
+        dashboard.SetActive(false);
         HomeLayer.Visibility = Visibility.Hidden;
         PhotoLayer.Visibility = Visibility.Visible;
         slideDue = DateTime.UtcNow.AddSeconds(settings.SlideSeconds);
@@ -148,7 +149,7 @@ public partial class MainWindow : Window
         HomeLayer.Visibility = Visibility.Visible;
         RecordInteraction();
         ShowFullscreen();
-        dashboard.TimerTick();
+        dashboard.SetActive(true);
     }
 
     private void ShowFullscreen()
@@ -179,6 +180,7 @@ public partial class MainWindow : Window
     private void LeaveForDesktop(bool showShell)
     {
         mode = Mode.Desktop;
+        dashboard.SetActive(false);
         Topmost = false;
         HomeLayer.Visibility = Visibility.Hidden;
         PhotoLayer.Visibility = Visibility.Hidden;
@@ -214,12 +216,14 @@ public partial class MainWindow : Window
         if (!refreshing && now >= catalogDue)
             _ = RefreshCatalogAsync();
 
-        dashboard.TimerTick();
-        if (mode == Mode.Home && settingsWindow is null &&
-            Stopwatch.GetElapsedTime(latestInteraction) >= TimeSpan.FromSeconds(settings.InactivitySeconds))
+        if (mode == Mode.Home && settingsWindow is null)
         {
-            ShowFrame();
-            return;
+            if (Stopwatch.GetElapsedTime(latestInteraction) >= TimeSpan.FromSeconds(settings.InactivitySeconds))
+            {
+                ShowFrame();
+                return;
+            }
+            dashboard.TimerTick();
         }
 
         if (mode != Mode.Frame || paused && current is not null || fading || settingsWindow is not null)
@@ -459,6 +463,7 @@ public partial class MainWindow : Window
 
     private void UpdateHomeStatus()
     {
+        BrowserHost.Visibility = dashboard.Ready ? Visibility.Visible : Visibility.Hidden;
         HomeMessage.Visibility = dashboard.Ready ? Visibility.Collapsed : Visibility.Visible;
         HomeStatusText.Text = dashboard.Status;
         RetryButton.Visibility = settings.DashboardUri is null ? Visibility.Collapsed : Visibility.Visible;

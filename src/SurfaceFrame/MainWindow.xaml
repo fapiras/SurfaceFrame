@@ -5,9 +5,14 @@
         Background="Black" FontFamily="Segoe UI" ShowInTaskbar="True" WindowStartupLocation="Manual">
     <Grid>
         <Grid x:Name="HomeLayer" Visibility="Hidden">
-            <Grid x:Name="BrowserHost" Background="#111820" />
-            <Border x:Name="HomeMessage" Visibility="Collapsed" Background="#18212A" CornerRadius="18"
-                    Padding="32" Margin="24,24,24,96" MaxWidth="540"
+            <Grid.RowDefinitions>
+                <RowDefinition Height="68" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="68" />
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="1" x:Name="BrowserHost" Background="#111820" Visibility="Hidden" />
+            <Border Grid.Row="1" x:Name="HomeMessage" Visibility="Collapsed" Background="#18212A" CornerRadius="18"
+                    Padding="32" Margin="24" MaxWidth="540"
                     VerticalAlignment="Center" HorizontalAlignment="Center">
                 <StackPanel>
                     <TextBlock Text="Home Assistant" Foreground="{StaticResource Text}" FontSize="27" FontWeight="SemiBold" />
@@ -20,8 +25,8 @@
                     </WrapPanel>
                 </StackPanel>
             </Border>
-            <Border Background="#EA18212A" BorderBrush="#435563" BorderThickness="1" CornerRadius="12"
-                    HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="14,0,0,14" Padding="5">
+            <Border Grid.Row="2" Background="#EA18212A" BorderBrush="#435563" BorderThickness="1" CornerRadius="12"
+                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="14,0,0,0" Padding="5">
                 <StackPanel Orientation="Horizontal">
                     <Button Style="{StaticResource Action}" Width="49" Padding="12,6" Click="Windows_Click"
                             AutomationProperties.Name="Apri il desktop Windows" ToolTip="Desktop Windows">
