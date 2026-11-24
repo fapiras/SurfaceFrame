@@ -6,7 +6,8 @@ using System.Text.Json;
 namespace SurfaceFrame;
 
 internal sealed record PhotoItem(string DriveId, string ItemId, string Name, string Revision,
-    long Bytes, int Width, int Height, int Orientation, int ThumbnailWidth = 0, int ThumbnailHeight = 0)
+    long Bytes, int Width, int Height, int Orientation, int ThumbnailWidth = 0, int ThumbnailHeight = 0,
+    string? RclonePath = null)
 {
     internal string Key => $"{DriveId}/{ItemId}";
     internal bool IsHeic => Path.GetExtension(Name).ToLowerInvariant() is ".heic" or ".heif";
@@ -36,7 +37,7 @@ internal sealed class OneDrive(HttpClient graph, HttpClient media)
 {
     private const string GraphRoot = "https://graph.microsoft.com/v1.0/";
     private const string ItemFields = "id,name,size,eTag,folder,file,image,photo,parentReference,remoteItem";
-    private const long MaxOriginalBytes = 48L * 1024 * 1024;
+    internal const int MaxOriginalBytes = 48 * 1024 * 1024;
     private const long MaxThumbnailBytes = 20L * 1024 * 1024;
     internal const long ThumbnailThreshold = 1024 * 1024;
 
@@ -249,7 +250,7 @@ internal sealed class OneDrive(HttpClient graph, HttpClient media)
     private static string ItemEndpoint(string driveId, string itemId) =>
         $"drives/{Uri.EscapeDataString(driveId)}/items/{Uri.EscapeDataString(itemId)}";
 
-    private static bool IsPhoto(string name) =>
+    internal static bool IsPhoto(string name) =>
         Path.GetExtension(name).ToLowerInvariant() is ".jpg" or ".jpeg" or ".png" or ".webp" or ".heic" or ".heif";
 
     private static JsonElement EffectiveItem(JsonElement item) =>

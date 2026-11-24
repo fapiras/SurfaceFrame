@@ -57,25 +57,41 @@
             <TabItem Header="OneDrive">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="16,6,16,16">
-                        <TextBlock Style="{StaticResource FieldLabel}" Text="ID applicazione Microsoft" />
-                        <DockPanel>
-                            <Button DockPanel.Dock="Right" Style="{StaticResource Action}" Content="Apri Microsoft Entra"
-                                    Click="OpenEntra_Click" Margin="7,0,0,0" />
-                            <TextBox x:Name="ClientId" AutomationProperties.Name="ID applicazione Microsoft" />
-                        </DockPanel>
-                        <CheckBox x:Name="SharedLinkConsent" Margin="0,7,0,1"
-                                  Content="Consenti l’accesso ai link condivisi (permesso Microsoft Files.ReadWrite)" />
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="OneDrive personale" />
                         <TextBlock Style="{StaticResource Help}"
-                                   Text="Per una cartella tua puoi usare /Foto/Cornice con accesso di sola lettura. L’uso del link può aggiungere la cartella condivisa all’accesso dell’account." />
+                                   Text="Accedi con il tuo account Microsoft personale per leggere le foto." />
                         <WrapPanel Margin="0,10,0,5">
-                            <Button Style="{StaticResource Action}" Content="Salva e accedi a Microsoft"
-                                    Click="Connect_Click" Margin="0,0,7,5" />
-                            <Button Style="{StaticResource Action}" Content="Disconnetti Microsoft"
-                                    Click="Disconnect_Click" Margin="0,0,7,5" />
-                            <Button Style="{StaticResource Action}" Content="Salva e aggiorna" Click="Refresh_Click" Margin="0,0,0,5" />
+                            <Button Style="{StaticResource Action}" Content="Collega OneDrive"
+                                    Click="ConnectRclone_Click" Margin="0,0,7,5" />
+                            <Button Style="{StaticResource Action}" Content="Disconnetti OneDrive"
+                                    Click="DisconnectRclone_Click" Margin="0,0,7,5" />
+                            <Button Style="{StaticResource Action}" Content="Salva e aggiorna"
+                                    Click="Refresh_Click" Margin="0,0,0,5" />
                         </WrapPanel>
                         <TextBlock x:Name="OneDriveStatusText" Style="{StaticResource Help}" />
+                        <Expander Header="Configurazione avanzata Microsoft Graph" Foreground="{StaticResource Text}"
+                                  Margin="0,8,0,0" x:Name="GraphOptions">
+                            <StackPanel Margin="12,0,0,0">
+                                <TextBlock Style="{StaticResource FieldLabel}" Text="ID applicazione Microsoft" />
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource Action}" Content="Apri Microsoft Entra"
+                                            Click="OpenEntra_Click" Margin="7,0,0,0" />
+                                    <TextBox x:Name="ClientId" AutomationProperties.Name="ID applicazione Microsoft" />
+                                </DockPanel>
+                                <CheckBox x:Name="SharedLinkConsent" Margin="0,7,0,1"
+                                          Content="Consenti l’accesso ai link condivisi (permesso Microsoft Files.ReadWrite)" />
+                                <TextBlock Style="{StaticResource Help}"
+                                           Text="Per una cartella tua puoi usare /Foto/Cornice con accesso di sola lettura. L’uso del link può aggiungere la cartella condivisa all’accesso dell’account." />
+                                <WrapPanel Margin="0,10,0,5">
+                                    <Button Style="{StaticResource Action}" Content="Salva e accedi a Microsoft"
+                                            Click="Connect_Click" Margin="0,0,7,5" />
+                                    <Button Style="{StaticResource Action}" Content="Disconnetti Microsoft"
+                                            Click="Disconnect_Click" Margin="0,0,7,5" />
+                                </WrapPanel>
+                            </StackPanel>
+                        </Expander>
                         <TextBlock Style="{StaticResource FieldLabel}" Text="Cartelle" />
+                        <TextBlock Style="{StaticResource Help}" Text="Per il tuo OneDrive, inserisci un percorso come /Foto/Cornice." Margin="0,0,0,6" />
                         <DockPanel LastChildFill="True">
                             <Button DockPanel.Dock="Right" Style="{StaticResource Action}" Content="Aggiungi"
                                     Click="AddFolder_Click" Margin="7,0,0,0" />

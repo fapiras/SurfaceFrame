@@ -15,6 +15,7 @@ public partial class SettingsWindow : Window
     private readonly DispatcherTimer timer;
     private readonly CancellationTokenSource lifetime = new();
     private bool authenticating;
+    private bool? useRclone;
     private AvailableUpdate? availableUpdate;
 
     internal SettingsWindow(MainWindow frame, FrameSettings settings)
@@ -22,6 +23,8 @@ public partial class SettingsWindow : Window
         InitializeComponent();
         this.frame = frame;
         UpdateStatusText.Text = $"Versione {UpdateService.CurrentVersion}. {frame.Updates.LastResult}".TrimEnd();
+        useRclone = settings.UseRclone;
+        GraphOptions.IsExpanded = !settings.UsesRclone;
         ClientId.Text = settings.MicrosoftClientId;
         SharedLinkConsent.IsChecked = settings.AllowSharedLinkScope;
         RefreshMinutes.Text = settings.CatalogMinutes.ToString(CultureInfo.CurrentCulture);
@@ -92,7 +95,7 @@ public partial class SettingsWindow : Window
             rows.Remove(row);
     }
 
-    private bool SaveForm()
+    private bool SaveForm(bool? provider = null)
     {
         if (authenticating)
             return false;
@@ -103,6 +106,7 @@ public partial class SettingsWindow : Window
             var settings = new FrameSettings
             {
                 MicrosoftClientId = ClientId.Text.Trim(),
+                UseRclone = provider ?? useRclone,
                 AllowSharedLinkScope = SharedLinkConsent.IsChecked == true,
                 Sources = rows.Select(row => new FolderSource
                 {
@@ -120,6 +124,7 @@ public partial class SettingsWindow : Window
                 StartInFrame = StartInFrame.IsChecked == true
             };
             frame.SaveSettings(settings);
+            useRclone = settings.UseRclone;
             frame.SetPaused(Pause.IsChecked == true);
             ResultText.Text = "Impostazioni salvate.";
             return true;
@@ -174,9 +179,22 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private async void ConnectRclone_Click(object sender, RoutedEventArgs args)
+    {
+        if (!SaveForm(provider: true))
+            return;
+        await AuthenticateAsync(frame.ConnectRcloneAsync, "Scegli il tuo account Microsoft personale nel browser.",
+            "OneDrive collegato. Aggiungi la cartella delle foto e premi Salva e aggiorna.");
+    }
+
+    private async void DisconnectRclone_Click(object sender, RoutedEventArgs args)
+    {
+        await AuthenticateAsync(frame.DisconnectRcloneAsync, "Disconnessione…", "OneDrive disconnesso.");
+    }
+
     private async void Connect_Click(object sender, RoutedEventArgs args)
     {
-        if (!SaveForm())
+        if (!SaveForm(provider: false))
             return;
         await AuthenticateAsync(frame.SignInAsync, "Completa l’accesso Microsoft nel browser.", "Account Microsoft connesso.");
     }

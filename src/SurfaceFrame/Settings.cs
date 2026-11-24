@@ -8,6 +8,8 @@ namespace SurfaceFrame;
 public sealed class FrameSettings
 {
     public string MicrosoftClientId { get; set; } = "";
+    public bool? UseRclone { get; set; }
+    public bool UsesRclone => UseRclone ?? (MicrosoftClientId.Length == 0);
     public bool AllowSharedLinkScope { get; set; }
     public List<FolderSource> Sources { get; set; } = [];
     public string DashboardUrl { get; set; } = "";
@@ -30,7 +32,7 @@ public sealed class FrameSettings
 
     public void Validate()
     {
-        if (MicrosoftClientId.Length > 0 && !Guid.TryParse(MicrosoftClientId, out _))
+        if (!UsesRclone && MicrosoftClientId.Length > 0 && !Guid.TryParse(MicrosoftClientId, out _))
             throw new ArgumentException("Inserisci l’ID applicazione Microsoft (un GUID).");
         if (DashboardUrl.Length > 0 && DashboardUri is null)
             throw new ArgumentException("L’indirizzo Home Assistant deve iniziare con http:// o https://.");

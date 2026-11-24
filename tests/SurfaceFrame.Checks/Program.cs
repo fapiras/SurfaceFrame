@@ -1,6 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using SurfaceFrame.Verification;
 
 namespace SurfaceFrame;
@@ -12,6 +13,7 @@ internal static class Program
     {
         CoreChecks.RunAsync().GetAwaiter().GetResult();
         CheckUpdates();
+        CheckOneDriveOptions();
         CheckImage(120, 80, 1, ".jpg", true);
         CheckImage(80, 120, 6, ".jpg", true);
         CheckImage(120, 80, 8, ".jpg", false);
@@ -23,6 +25,24 @@ internal static class Program
         CheckImage(120, 80, 1, ".jpg", false, 1.6);
         Console.WriteLine("OK: decodifica JPG, PNG, WebP e orientamento EXIF, soglia e immagini quadrate.");
         return 0;
+    }
+
+    private static void CheckOneDriveOptions()
+    {
+        if (!new FrameSettings().UsesRclone ||
+            new FrameSettings { MicrosoftClientId = Guid.NewGuid().ToString() }.UsesRclone ||
+            !new FrameSettings { MicrosoftClientId = Guid.NewGuid().ToString(), UseRclone = true }.UsesRclone)
+            throw new InvalidOperationException("Modalità OneDrive predefinita o migrazione impostazioni errata.");
+        using var options = JsonDocument.Parse("""
+            {"Examples":[{"Value":"azienda","Help":"OneDrive (business)"},{"Value":"foto","Help":"OneDrive (personal)"}]}
+            """);
+        using var businessOnly = JsonDocument.Parse("""
+            {"Examples":[{"Value":"azienda","Help":"OneDrive (business)"}]}
+            """);
+        if (RcloneOneDrive.FindPersonalDrive(options.RootElement) != "foto" ||
+            RcloneOneDrive.FindPersonalDrive(businessOnly.RootElement) != "")
+            throw new InvalidOperationException("Selezione del OneDrive personale errata.");
+        Console.WriteLine("OK: selezione OneDrive personale e compatibilità delle impostazioni.");
     }
 
     private static void CheckImage(int width, int height, ushort orientation, string extension,

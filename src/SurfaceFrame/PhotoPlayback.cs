@@ -10,7 +10,7 @@ namespace SurfaceFrame;
 internal sealed record DisplayPhoto(PhotoItem Item, BitmapSource Bitmap);
 internal sealed record PhotoCompatibility(int Compatible, int Pending);
 
-internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn, OneDrive oneDrive)
+internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn, OneDrive oneDrive, RcloneOneDrive rclone)
 {
     private readonly Dictionary<Guid, IReadOnlyList<PhotoItem>> sourcePhotos = [];
     private readonly Dictionary<Guid, string> sourceMessages = [];
@@ -60,9 +60,9 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
         RetryAt = null;
         RefreshFailed = false;
         var blocked = settings.Sources.Where(source =>
-            source.Enabled && source.IsShareLink && !settings.AllowSharedLinkScope).ToArray();
+            source.Enabled && source.IsShareLink && (settings.UsesRclone || !settings.AllowSharedLinkScope)).ToArray();
         var active = settings.Sources.Where(source =>
-            source.Enabled && (!source.IsShareLink || settings.AllowSharedLinkScope)).ToArray();
+            source.Enabled && (!source.IsShareLink || !settings.UsesRclone && settings.AllowSharedLinkScope)).ToArray();
         var activeIds = active.Select(source => source.Id).ToHashSet();
         foreach (Guid id in sourcePhotos.Keys.Concat(sourceMessages.Keys).Distinct().ToArray())
         {
@@ -72,7 +72,9 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
             sourceMessages.Remove(id);
         }
 
-        const string consentRequired = "Abilita esplicitamente il permesso per i link condivisi.";
+        string consentRequired = settings.UsesRclone
+            ? "Per OneDrive personale usa il percorso della cartella, per esempio /Foto/Cornice."
+            : "Abilita esplicitamente il permesso per i link condivisi.";
         foreach (var source in blocked)
             sourceMessages[source.Id] = consentRequired;
         if (active.Length == 0)
@@ -85,7 +87,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
         string accessToken;
         try
         {
-            accessToken = await signIn.GetTokenAsync(settings, token);
+            accessToken = settings.UsesRclone ? "" : await signIn.GetTokenAsync(settings, token);
             token.ThrowIfCancellationRequested();
         }
         catch (Exception error) when (!token.IsCancellationRequested)
@@ -114,7 +116,9 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
             timeout.CancelAfter(TimeSpan.FromMinutes(3));
             try
             {
-                var items = await oneDrive.ListAsync(source, accessToken, timeout.Token);
+                var items = settings.UsesRclone
+                    ? await rclone.ListAsync(source, timeout.Token)
+                    : await oneDrive.ListAsync(source, accessToken, timeout.Token);
                 token.ThrowIfCancellationRequested();
                 sourcePhotos[source.Id] = items;
                 sourceMessages[source.Id] = "Aggiornata";
@@ -124,6 +128,8 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
                 failures++;
                 lastFailure = Describe(error);
                 sourceMessages[source.Id] = lastFailure;
+                if (error is RcloneMissingException)
+                    sourcePhotos.Remove(source.Id);
                 if (error is GraphRequestException graphError)
                 {
                     if (graphError.Status is HttpStatusCode.Forbidden or HttpStatusCode.NotFound)
@@ -151,7 +157,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
         if (!HasCandidates(settings.MinimumAspectRatio))
             return null;
 
-        string accessToken = await signIn.GetTokenAsync(settings, cancellationToken);
+        string accessToken = settings.UsesRclone ? "" : await signIn.GetTokenAsync(settings, cancellationToken);
         var attempted = new HashSet<string>(StringComparer.Ordinal);
         // Limit a preloading pass so very large albums remain responsive while scanning unknown orientations.
         int limit = Math.Min(catalog.Count, 20);
@@ -177,7 +183,8 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
                 if (frame.Bitmap is not null && Contains(item))
                     return new DisplayPhoto(item, frame.Bitmap);
             }
-            catch (GraphRequestException error) when (error.Status is HttpStatusCode.NotFound or HttpStatusCode.Forbidden)
+            catch (Exception error) when (error is RcloneMissingException or
+                GraphRequestException { Status: HttpStatusCode.NotFound or HttpStatusCode.Forbidden })
             {
                 storage.Log("Foto non accessibile", error);
             }
@@ -195,7 +202,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
     private async Task<DecodedPhoto> DecodeAsync(PhotoItem item, string token, double ratio, int width, int height,
         CancellationToken cancellationToken)
     {
-        if (item.Bytes >= OneDrive.ThumbnailThreshold &&
+        if (item.RclonePath is null && item.Bytes >= OneDrive.ThumbnailThreshold &&
             (item.IsHeic || item.AspectFromMetadata() is not null || item.AspectFromThumbnail(ratio) is not null))
         {
             try
@@ -215,7 +222,9 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
             }
         }
 
-        using var original = await oneDrive.GetOriginalAsync(item, token, cancellationToken);
+        using var original = item.RclonePath is null
+            ? await oneDrive.GetOriginalAsync(item, token, cancellationToken)
+            : await rclone.GetOriginalAsync(item, cancellationToken);
         return await Task.Run(() => PhotoDecoder.Decode(original, ratio, width, height,
             alreadyOriented: false, cancellationToken), cancellationToken);
     }
@@ -237,6 +246,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
     internal static string Describe(Exception error) => error switch
     {
         SignInRequiredException signInError => signInError.Message,
+        RcloneException rcloneError => rcloneError.Message,
         GraphRequestException graphError => graphError.DisplayMessage,
         InvalidDataException invalid => invalid.Message,
         Microsoft.Identity.Client.MsalException msal =>

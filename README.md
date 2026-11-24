@@ -26,6 +26,16 @@ Il pacchetto iniziale 1.0.2 permette di provare l’app e vedere il pulsante. Pe
 
 ## OneDrive personale
 
+1. In **Impostazioni → OneDrive**, premi **Collega OneDrive**. Nel browser seleziona l’account Microsoft personale che contiene le foto e conferma la richiesta di rclone. Surface Frame include rclone e richiede accesso in sola lettura (`Files.Read` e `offline_access` per mantenere la sessione).
+2. Nella sezione **Cartelle** inserisci il percorso della cartella a partire dalla radice del tuo OneDrive, per esempio **/Foto/Cornice**. Premi **Aggiungi**, scegli se includere le sottocartelle e premi **Salva e aggiorna**.
+3. Surface Frame carica una foto alla volta in memoria e verifica che sia orizzontale. Con rclone legge gli originali fino a 48 MiB e applica il limite di decodifica di 60 MP. La compatibilità HEIC/HEIF dipende dal formato dell’originale e dal decoder. **Disconnetti OneDrive** rimuove la configurazione rclone di Surface Frame dal profilo Windows.
+
+[Rclone e OneDrive](https://rclone.org/onedrive/) · [Licenza rclone](rclone-LICENSE.txt)
+
+### Configurazione avanzata Microsoft Graph
+
+Per i link di condivisione e per la configurazione esistente con un ID applicazione Microsoft, apri **Configurazione avanzata Microsoft Graph**.
+
 La registrazione dell’applicazione in Microsoft Entra richiede un tenant in cui puoi registrare app. L’account che possiede o può accedere alle foto è l’account Microsoft personale che selezioni quando accedi da Surface Frame.
 
 1. Usa **Apri Microsoft Entra** nelle impostazioni e vai in **App registrations → New registration**. Usa il nome **Surface Frame** e scegli il tipo di account che include sia le directory organizzative sia gli account Microsoft personali. Surface Frame usa l’autorità di accesso **consumers**.

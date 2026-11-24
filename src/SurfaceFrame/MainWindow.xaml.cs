@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private readonly LocalStorage storage;
     internal UpdateService Updates { get; }
     private readonly MicrosoftSignIn signIn;
+    private readonly RcloneOneDrive rclone;
     private readonly PhotoPlayback playback;
     private readonly Dashboard dashboard;
     private readonly DispatcherTimer timer;
@@ -50,7 +51,8 @@ public partial class MainWindow : Window
         Updates = new UpdateService(storage);
         settings = storage.Load();
         signIn = new MicrosoftSignIn(storage.Root);
-        playback = new PhotoPlayback(storage, signIn, new OneDrive(graphClient, mediaClient));
+        rclone = new RcloneOneDrive(storage.Root);
+        playback = new PhotoPlayback(storage, signIn, new OneDrive(graphClient, mediaClient), rclone);
         dashboard = new Dashboard(BrowserHost, storage);
         dashboard.Changed += UpdateHomeStatus;
         dashboard.Activity += RecordInteraction;
@@ -371,7 +373,7 @@ public partial class MainWindow : Window
 
         var before = previous.Sources.Select(s => (s.Id, s.Address, s.Enabled, s.IncludeSubfolders));
         var after = updated.Sources.Select(s => (s.Id, s.Address, s.Enabled, s.IncludeSubfolders));
-        bool sourceChanged = !before.SequenceEqual(after) ||
+        bool sourceChanged = !before.SequenceEqual(after) || previous.UsesRclone != updated.UsesRclone ||
             !string.Equals(previous.MicrosoftClientId, updated.MicrosoftClientId, StringComparison.OrdinalIgnoreCase) ||
             previous.AllowSharedLinkScope != updated.AllowSharedLinkScope;
         bool ratioChanged = previous.MinimumAspectRatio != updated.MinimumAspectRatio;
@@ -385,6 +387,21 @@ public partial class MainWindow : Window
         dashboard.Configure(updated.DashboardUri);
         ApplyPhotoFit();
         slideDue = DateTime.UtcNow.AddSeconds(settings.SlideSeconds);
+        RefreshSoon();
+    }
+
+    internal Task ConnectRcloneAsync(CancellationToken token) => ChangeRcloneAsync(rclone.ConnectAsync, token);
+
+    internal Task DisconnectRcloneAsync(CancellationToken token) => ChangeRcloneAsync(rclone.DisconnectAsync, token);
+
+    private async Task ChangeRcloneAsync(Func<CancellationToken, Task> action, CancellationToken token)
+    {
+        await action(token);
+        if (closed || !settings.UsesRclone)
+            return;
+        CancelWork();
+        playback.Reset();
+        ClearPhotos();
         RefreshSoon();
     }
 

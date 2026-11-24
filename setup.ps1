@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 function Test-AppFiles($directory) {
-    foreach ($file in @('SurfaceFrame.exe', 'SurfaceFrame.dll', 'coreclr.dll')) {
+    foreach ($file in @('SurfaceFrame.exe', 'SurfaceFrame.dll', 'coreclr.dll', 'rclone/rclone.exe')) {
         if (!(Test-Path -LiteralPath (Join-Path $directory $file) -PathType Leaf)) { return $false }
     }
     return $true
@@ -103,6 +103,7 @@ try {
             Write-Host 'Preparo Surface Frame per Windows x64...'
             & $dotnet publish $project --configuration Release --runtime win-x64 --self-contained true --output $output
             if ($LASTEXITCODE -ne 0) { throw "Compilazione interrotta. Codice $LASTEXITCODE." }
+            & (Join-Path $PSScriptRoot 'bundle-rclone.ps1') -Output $output
         }
         if (!(Test-AppFiles $output)) { throw 'La preparazione non ha prodotto tutti i file richiesti.' }
         if (Test-Path -LiteralPath $installed) {
