@@ -8,7 +8,7 @@ using System.Net;
 namespace SurfaceFrame;
 
 internal sealed record DisplayPhoto(PhotoItem Item, BitmapSource Bitmap, bool FromCache = false);
-internal sealed record PhotoCompatibility(int Compatible, int Pending);
+internal sealed record PhotoCompatibility(int Compatible, int Pending, int Total);
 
 internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn, OneDrive oneDrive, RcloneOneDrive rclone)
 {
@@ -22,6 +22,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
     internal string Status { get; private set; } = "Configura una cartella OneDrive.";
     internal DateTimeOffset? LastRefresh { get; private set; }
     internal int CatalogCount => catalog.Count;
+    internal HashSet<string> CatalogRevisions => revisions;
     internal bool Contains(PhotoItem item) => revisions.Contains(item.CacheKey);
     internal bool HasCandidates(double minimumRatio) =>
         catalog.Any(item => Aspect(item, minimumRatio) is not { } ratio || Matches(ratio, minimumRatio));
@@ -41,10 +42,11 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
     internal PhotoCompatibility Compatibility(Guid sourceId, double minimumRatio)
     {
         if (!sourcePhotos.TryGetValue(sourceId, out var photos))
-            return new(0, 0);
+            return new(0, 0, 0);
         int compatible = 0;
         int pending = 0;
-        foreach (var item in photos.DistinctBy(photo => photo.Key))
+        var distinct = photos.DistinctBy(photo => photo.Key).ToArray();
+        foreach (var item in distinct)
         {
             double? ratio = Aspect(item, minimumRatio);
             if (ratio is null)
@@ -52,7 +54,7 @@ internal sealed class PhotoPlayback(LocalStorage storage, MicrosoftSignIn signIn
             else if (Matches(ratio.Value, minimumRatio))
                 compatible++;
         }
-        return new(compatible, pending);
+        return new(compatible, pending, distinct.Length);
     }
 
     internal string? SourceStatus(Guid id) => sourceMessages.GetValueOrDefault(id);

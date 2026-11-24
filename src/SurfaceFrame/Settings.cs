@@ -95,7 +95,8 @@ internal sealed class LocalStorage
         IgnoreReadOnlyProperties = true
     };
     private readonly object logLock = new();
-    internal string Root { get; } = Path.Combine(
+    internal string Root { get; }
+    internal LocalStorage(string? root = null) => Root = root ?? Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SurfaceFrame");
     private string SettingsPath => Path.Combine(Root, "settings.json");
     internal string LogPath => Path.Combine(Root, "logs", "surface-frame.log");

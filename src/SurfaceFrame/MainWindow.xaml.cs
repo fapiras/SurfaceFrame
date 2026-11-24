@@ -294,6 +294,13 @@ public partial class MainWindow : Window
             if (token.IsCancellationRequested || closed)
                 return;
             useCachedPhotos = playback.RefreshFailed;
+            if (!useCachedPhotos && snapshot.CachePhotos)
+            {
+                var revisions = playback.CatalogRevisions;
+                await Task.Run(() => photoCache.Prune(snapshot, revisions, token), token);
+                if (token.IsCancellationRequested || closed)
+                    return;
+            }
             if (next is { } staged && !IsPlayable(staged))
                 next = null;
             if (previousPhoto is { } previous && !IsPlayable(previous))

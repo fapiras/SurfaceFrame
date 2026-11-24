@@ -17,6 +17,8 @@ internal static class Program
         CheckOneDriveOptions();
         CheckDashboardInactive();
         CheckNightSchedule();
+        CheckOfflinePhoto();
+        Console.WriteLine("OK: modalità notte e salvataggio e riproduzione offline.");
         CheckImage(120, 80, 8, ".jpg", true, 0);
         CheckImage(80, 80, 1, ".jpg", true, 0);
         CheckImage(120, 80, 1, ".jpg", true);
@@ -88,6 +90,36 @@ internal static class Program
         if (dashboard.CanRetry)
             throw new InvalidOperationException("WebView2 richiesto al ritorno alla cornice.");
         Console.WriteLine("OK: Home Assistant non inizializza WebView2 in modalità cornice.");
+    }
+
+    private static void CheckOfflinePhoto()
+    {
+        string folder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        try
+        {
+            var cache = new PhotoCache(new LocalStorage(folder));
+            var settings = new FrameSettings { Sources = [new FolderSource { Address = "/Foto" }] };
+            using var data = File.OpenRead(Path.Combine(AppContext.BaseDirectory, "Fixtures", "120x80-1.jpg"));
+            var bitmap = PhotoDecoder.Decode(data, 1, 120, 80, false, CancellationToken.None).Bitmap!;
+            var item = new PhotoItem("drive", "photo", "test.jpg", "revision", 0, 120, 80, 1);
+            cache.Remember(settings, new DisplayPhoto(item, bitmap), CancellationToken.None);
+            var restored = cache.Load(settings, null, [], CancellationToken.None);
+            if (restored is not { FromCache: true } || restored.Item.Name != item.Name ||
+                restored.Bitmap.PixelWidth != 120 || !restored.Bitmap.IsFrozen)
+                throw new InvalidOperationException("La foto non è disponibile dalla cache offline.");
+            settings.Sources[0].Address = "/Altre foto";
+            if (cache.Load(settings, null, [], CancellationToken.None) is not null)
+                throw new InvalidOperationException("La cache ha restituito una foto di un’altra cartella.");
+            settings.Sources[0].Address = "/Foto";
+            cache.Prune(settings, [], CancellationToken.None);
+            if (cache.Load(settings, null, [], CancellationToken.None) is not null)
+                throw new InvalidOperationException("La cache conserva una foto rimossa dal catalogo.");
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+                Directory.Delete(folder, recursive: true);
+        }
     }
 
     private static void CheckNightSchedule()

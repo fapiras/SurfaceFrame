@@ -75,8 +75,8 @@ public partial class SettingsWindow : Window
             string? status = frame.SourceStatus(row.Id);
             row.Summary = !row.Enabled ? "Disattivata" : status switch
             {
-                "Aggiornata" when count.Pending > 0 => $"{count.Compatible} compatibili · {count.Pending} da verificare",
-                "Aggiornata" => $"{count.Compatible} compatibili",
+                "Aggiornata" when count.Pending > 0 => $"{count.Total} foto · {count.Pending} da verificare",
+                "Aggiornata" => $"{count.Total} foto · {count.Compatible} compatibili",
                 null => "Da aggiornare",
                 _ => status
             };

@@ -43,7 +43,10 @@ internal sealed class PhotoCache(LocalStorage storage)
                         writer.Write(JsonSerializer.Serialize(photo.Item));
                         var encoder = new JpegBitmapEncoder { QualityLevel = 87 };
                         encoder.Frames.Add(BitmapFrame.Create(photo.Bitmap));
-                        encoder.Save(writer.BaseStream);
+                        using var jpeg = new MemoryStream();
+                        encoder.Save(jpeg);
+                        jpeg.Position = 0;
+                        jpeg.CopyTo(writer.BaseStream);
                     }
                     File.Move(staging, file, overwrite: true);
                 }
@@ -115,6 +118,29 @@ internal sealed class PhotoCache(LocalStorage storage)
                 }
             }
             return null;
+        }
+    }
+
+    internal void Prune(FrameSettings settings, HashSet<string> catalog, CancellationToken token)
+    {
+        lock (sync)
+        {
+            if (token.IsCancellationRequested)
+                return;
+            try
+            {
+                if (!Directory.Exists(Root))
+                    return;
+                string prefix = Prefix(settings) + "-";
+                var keep = catalog.Select(key => prefix + Hash(key) + ".photo").ToHashSet(StringComparer.Ordinal);
+                foreach (var file in new DirectoryInfo(Root).EnumerateFiles(prefix + "*.photo"))
+                    if (!keep.Contains(file.Name))
+                        file.Delete();
+            }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+            {
+                storage.Log("Aggiornamento cache foto", error);
+            }
         }
     }
 

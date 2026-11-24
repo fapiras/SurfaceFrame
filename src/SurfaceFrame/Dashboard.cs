@@ -62,7 +62,7 @@ internal sealed class Dashboard(Grid host, LocalStorage storage) : IDisposable
             return;
         }
         retryAt = DateTime.MinValue;
-        SetStatus("Apertura della dashboard…");
+        SetStatus("Indirizzo salvato. Apri Home Assistant per verificare la connessione.");
     }
 
     internal void TimerTick()
