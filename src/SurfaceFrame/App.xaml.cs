@@ -7,6 +7,8 @@ public partial class App : Application
 {
     private Mutex? instance;
     private bool ownsMutex;
+    private EventWaitHandle? restoreSignal;
+    private RegisteredWaitHandle? restoreWait;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -28,12 +30,12 @@ public partial class App : Application
             finally { Shutdown(); }
             return;
         }
+        restoreSignal = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\SurfaceFrame-Restore-2CE15A63");
         instance = new Mutex(true, @"Local\SurfaceFrame-2CE15A63", out ownsMutex);
         if (!ownsMutex)
         {
             if (e.Args is not ["--update-probe", _])
-                MessageBox.Show("Surface Frame è già aperta. Usa «Torna alla cornice» nell’area di notifica.",
-                    "Surface Frame", MessageBoxButton.OK, MessageBoxImage.Information);
+                restoreSignal.Set();
             Shutdown();
             return;
         }
@@ -41,6 +43,9 @@ public partial class App : Application
         DispatcherUnhandledException += (_, args) => storage.Log("Errore imprevisto", args.Exception);
         var window = new MainWindow(storage);
         MainWindow = window;
+        restoreWait = ThreadPool.RegisterWaitForSingleObject(restoreSignal,
+            (_, _) => Dispatcher.BeginInvoke(new Action(window.RestoreFromLaunch)),
+            null, Timeout.Infinite, executeOnlyOnce: false);
         if (e.Args.Contains("--setup", StringComparer.Ordinal))
             window.Loaded += (_, _) => window.Dispatcher.BeginInvoke(new Action(window.ShowSettings));
         if (e.Args is ["--update-probe", var probe])
@@ -54,6 +59,8 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        restoreWait?.Unregister(null);
+        restoreSignal?.Dispose();
         if (ownsMutex)
             instance?.ReleaseMutex();
         instance?.Dispose();

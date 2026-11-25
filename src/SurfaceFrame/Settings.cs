@@ -5,6 +5,8 @@ using Microsoft.Win32;
 
 namespace SurfaceFrame;
 
+public enum DisplayBrightnessMode { Windows, Manual, Adaptive }
+
 public sealed class FrameSettings
 {
     public string MicrosoftClientId { get; set; } = "";
@@ -24,6 +26,8 @@ public sealed class FrameSettings
     public bool ShowPhotoName { get; set; }
     public bool ShowPhotoDate { get; set; }
     public bool CachePhotos { get; set; } = true;
+    public DisplayBrightnessMode BrightnessMode { get; set; }
+    public int ManualBrightness { get; set; } = 50;
     public bool NightEnabled { get; set; }
     public bool NightBlackScreen { get; set; }
     public TimeOnly NightStart { get; set; } = new(23, 0);
@@ -55,6 +59,8 @@ public sealed class FrameSettings
             CatalogMinutes is < 1 or > 1440 || FadeMilliseconds is < 0 or > 2000 ||
             !double.IsFinite(MinimumAspectRatio) || MinimumAspectRatio is < 1 or > 10)
             throw new ArgumentException("Controlla gli intervalli e il rapporto minimo delle foto.");
+        if (!Enum.IsDefined(BrightnessMode) || ManualBrightness is < 5 or > 100)
+            throw new ArgumentException("Controlla il valore della luminosità.");
         if (NightEnabled && NightStart == NightEnd)
             throw new ArgumentException("Gli orari di inizio e fine della modalità notte devono essere diversi.");
         if (Sources.Any(source => source is null || !FolderSource.IsValid(source.Address)))

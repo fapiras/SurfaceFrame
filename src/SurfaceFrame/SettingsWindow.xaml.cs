@@ -44,6 +44,9 @@ public partial class SettingsWindow : Window
         ShowPhotoName.IsChecked = settings.ShowPhotoName;
         ShowPhotoDate.IsChecked = settings.ShowPhotoDate;
         CachePhotos.IsChecked = settings.CachePhotos;
+        ManualBrightness.Value = settings.ManualBrightness;
+        BrightnessModeSelect.SelectedIndex = (int)settings.BrightnessMode;
+        BrightnessSliderPanel.IsEnabled = settings.BrightnessMode != DisplayBrightnessMode.Windows;
         NightEnabled.IsChecked = settings.NightEnabled;
         NightBlackScreen.IsChecked = settings.NightBlackScreen;
         NightStart.Text = settings.NightStart.ToString("HH:mm", CultureInfo.InvariantCulture);
@@ -64,6 +67,7 @@ public partial class SettingsWindow : Window
     private void UpdateStatus()
     {
         OneDriveStatusText.Text = frame.OneDriveStatus;
+        BrightnessStatusText.Text = frame.BrightnessStatus;
         DashboardStatusText.Text = frame.DashboardStatus;
         DiagnosticText.Text = string.Join(Environment.NewLine,
             new[] { frame.StartupError, frame.OneDriveStatus, frame.DashboardStatus, frame.PhotoError }
@@ -185,6 +189,8 @@ public partial class SettingsWindow : Window
                 ShowPhotoName = ShowPhotoName.IsChecked == true,
                 ShowPhotoDate = ShowPhotoDate.IsChecked == true,
                 CachePhotos = CachePhotos.IsChecked == true,
+                BrightnessMode = (DisplayBrightnessMode)BrightnessModeSelect.SelectedIndex,
+                ManualBrightness = (int)ManualBrightness.Value,
                 NightEnabled = NightEnabled.IsChecked == true,
                 NightBlackScreen = NightBlackScreen.IsChecked == true,
                 NightStart = ReadTime(NightStart.Text),
@@ -210,6 +216,12 @@ public partial class SettingsWindow : Window
             ResultText.Text = "Impossibile salvare. Verifica l’accesso alla configurazione e all’avvio automatico.";
             return false;
         }
+    }
+
+    private void BrightnessMode_Changed(object sender, SelectionChangedEventArgs args)
+    {
+        if (BrightnessSliderPanel is not null)
+            BrightnessSliderPanel.IsEnabled = BrightnessModeSelect.SelectedIndex > 0;
     }
 
     private double? ParseRatio()

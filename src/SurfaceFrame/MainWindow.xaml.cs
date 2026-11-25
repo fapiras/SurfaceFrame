@@ -44,6 +44,12 @@ public partial class MainWindow : Window
     private Mode mode = Mode.Frame;
     private SettingsWindow? settingsWindow;
     private bool closed;
+    private bool restoringWindow;
+    private readonly DisplayBrightness brightness = new();
+    private bool adjustingBrightness;
+    private bool brightnessRequested = true;
+    private DateTime nextBrightnessReading;
+    private int? brightnessTarget;
     private bool paused;
     private bool refreshing;
     private bool preparing;
@@ -110,8 +116,13 @@ public partial class MainWindow : Window
         };
         StateChanged += (_, _) =>
         {
-            if (!closed && WindowState == WindowState.Minimized && mode != Mode.Desktop)
+            if (!closed && !restoringWindow && WindowState == WindowState.Minimized && mode != Mode.Desktop)
                 LeaveForDesktop(showShell: false);
+        };
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible)
+                CommandPopup.IsOpen = false;
         };
         PreviewKeyDown += (_, args) =>
         {
@@ -143,6 +154,23 @@ public partial class MainWindow : Window
 
     internal bool StartInFrame => settings.StartInFrame;
     internal bool Paused => paused;
+    internal string BrightnessStatus { get; private set; } = "Controllo luminosità in attesa.";
+
+    internal void RestoreFromLaunch()
+    {
+        if (closed)
+            return;
+        if (settingsWindow is { } dialog)
+        {
+            if (dialog.WindowState == WindowState.Minimized)
+                dialog.WindowState = WindowState.Normal;
+            dialog.Activate();
+        }
+        else if (mode == Mode.Home)
+            ShowHome();
+        else
+            ShowFrame();
+    }
     internal string OneDriveStatus => playback.LastRefresh is { } last
         ? $"{playback.Status} · Ultimo aggiornamento {last.LocalDateTime:g}"
         : playback.Status;
@@ -195,14 +223,31 @@ public partial class MainWindow : Window
     private void ShowFullscreen()
     {
         bool restore = !IsVisible || WindowState == WindowState.Minimized;
-        if (WindowState == WindowState.Minimized)
-            WindowState = WindowState.Normal;
-        if (!IsVisible)
-            Show();
-        if (restore)
-            PositionOnPrimaryScreen();
-        Topmost = true;
-        Activate();
+        restoringWindow = true;
+        CommandPopup.IsOpen = false;
+        try
+        {
+            if (!IsVisible)
+                Show();
+            if (restore)
+            {
+                var handle = new WindowInteropHelper(this).Handle;
+                if (WindowState == WindowState.Minimized || IsIconic(handle))
+                {
+                    ShowWindow(handle, 9); // SW_RESTORE
+                    WindowState = WindowState.Normal;
+                }
+                PositionOnPrimaryScreen();
+                UpdateLayout();
+                brightnessRequested = true;
+            }
+            Topmost = true;
+            Activate();
+        }
+        finally { restoringWindow = false; }
+
+        // A Popup needs the restored visual bounds, not the hidden window's last position.
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(UpdateCommands));
     }
 
     private void PositionOnPrimaryScreen()
@@ -227,10 +272,7 @@ public partial class MainWindow : Window
         HomeLayer.Visibility = Visibility.Hidden;
         PhotoLayer.Visibility = Visibility.Hidden;
         if (IsVisible)
-        {
-            WindowState = WindowState.Minimized;
             Hide();
-        }
 
         if (!showShell)
             return;
@@ -255,6 +297,9 @@ public partial class MainWindow : Window
         if (closed || mode == Mode.Desktop && settingsWindow is null)
             return;
         DateTime now = DateTime.UtcNow;
+        if (mode != Mode.Desktop && IsVisible && !adjustingBrightness && now >= nextBrightnessReading &&
+            (brightnessRequested || settings.BrightnessMode == DisplayBrightnessMode.Adaptive))
+            _ = UpdateBrightnessAsync();
         UpdateNightMode();
         if (CommandMenu.Visibility == Visibility.Visible && now >= commandsUntil && !CommandMenu.IsMouseOver)
             CloseCommands();
@@ -279,6 +324,39 @@ public partial class MainWindow : Window
         if (!fading && next is null && !preparing && preloadDue <= now &&
             (useCachedPhotos || playback.HasCandidates(settings.PhotoRatioFilter)))
             _ = PreloadAsync();
+    }
+
+    private async Task UpdateBrightnessAsync()
+    {
+        adjustingBrightness = true;
+        brightnessRequested = false;
+        var snapshot = settings;
+        nextBrightnessReading = DateTime.UtcNow.AddSeconds(4);
+        try
+        {
+            if (snapshot.BrightnessMode == DisplayBrightnessMode.Windows)
+            {
+                BrightnessStatus = "Luminosità gestita da Windows.";
+                return;
+            }
+
+            var result = await Task.Run(() => brightness.Update(snapshot.BrightnessMode,
+                snapshot.ManualBrightness, brightnessTarget));
+            if (closed)
+                return;
+            if (settings.BrightnessMode != snapshot.BrightnessMode ||
+                settings.ManualBrightness != snapshot.ManualBrightness)
+                return;
+            brightnessTarget = result.Target;
+            BrightnessStatus = result.Status;
+        }
+        catch (Exception error)
+        {
+            BrightnessStatus = "Luminosità del display non disponibile. Controlla le impostazioni di Windows.";
+            nextBrightnessReading = DateTime.UtcNow.AddSeconds(30);
+            storage.Log("Luminosità del display", error);
+        }
+        finally { adjustingBrightness = false; }
     }
 
     private async Task RefreshCatalogAsync()
@@ -493,6 +571,12 @@ public partial class MainWindow : Window
 
         CancelWork();
         settings = updated;
+        if (previous.BrightnessMode != updated.BrightnessMode || previous.ManualBrightness != updated.ManualBrightness)
+        {
+            brightnessRequested = true;
+            brightnessTarget = null;
+            nextBrightnessReading = DateTime.MinValue;
+        }
         if (sourceChanged)
             playback.Reset();
         if (sourceChanged || ratioChanged || previous.CachePhotos && !updated.CachePhotos)
@@ -664,7 +748,8 @@ public partial class MainWindow : Window
 
     private void UpdateCommands()
     {
-        CommandPopup.IsOpen = IsLoaded && IsVisible && !closed && mode != Mode.Desktop &&
+        CommandPopup.IsOpen = IsLoaded && IsVisible && !closed && !restoringWindow && mode != Mode.Desktop &&
+            WindowState != WindowState.Minimized && SurfaceRoot.ActualWidth > 0 && SurfaceRoot.ActualHeight > 0 &&
             settingsWindow is null && NightBlack.Visibility != Visibility.Visible;
         SwitchModeButton.Content = mode == Mode.Home ? "Cornice fotografica" : "Home Assistant";
         SlideControls.Visibility = mode == Mode.Frame ? Visibility.Visible : Visibility.Collapsed;
@@ -774,6 +859,14 @@ public partial class MainWindow : Window
         mediaClient.Dispose();
         base.OnClosed(e);
     }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ShowWindow(IntPtr window, int command);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr window);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

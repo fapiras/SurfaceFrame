@@ -193,6 +193,24 @@
                         <TextBlock Style="{StaticResource Help}" Text="Togli la spunta per visualizzare tutta la foto." />
                         <CheckBox x:Name="ShowPhotoName" Content="Mostra il nome del file" />
                         <CheckBox x:Name="ShowPhotoDate" Content="Mostra la data della foto, quando disponibile" />
+                        <TextBlock Style="{StaticResource FieldLabel}" Text="Luminosità del display" />
+                        <ComboBox x:Name="BrightnessModeSelect" Width="240" MinHeight="38" HorizontalAlignment="Left"
+                                  SelectionChanged="BrightnessMode_Changed" AutomationProperties.Name="Modalità luminosità">
+                            <ComboBoxItem Content="Gestita da Windows" />
+                            <ComboBoxItem Content="Manuale" />
+                            <ComboBoxItem Content="Adattiva al sensore di luce" />
+                        </ComboBox>
+                        <StackPanel x:Name="BrightnessSliderPanel" Margin="0,8,0,0">
+                            <TextBlock Style="{StaticResource Help}" Text="Livello manuale o di riserva" />
+                            <WrapPanel>
+                                <Slider x:Name="ManualBrightness" Minimum="5" Maximum="100" Width="210" MinHeight="32"
+                                        TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                        AutomationProperties.Name="Percentuale di luminosità" />
+                                <TextBlock Margin="10,0,0,0" VerticalAlignment="Center"
+                                           Text="{Binding Value, ElementName=ManualBrightness, StringFormat={}{0:0}%}" />
+                            </WrapPanel>
+                        </StackPanel>
+                        <TextBlock x:Name="BrightnessStatusText" Style="{StaticResource Help}" Margin="0,5,0,0" />
                         <TextBlock Style="{StaticResource FieldLabel}" Text="Modalità notte" />
                         <CheckBox x:Name="NightEnabled" Content="Attiva a orari programmati" />
                         <CheckBox x:Name="NightBlackScreen" Content="Mostra uno schermo nero fino al prossimo tocco" />

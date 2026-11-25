@@ -16,6 +16,7 @@ internal static class Program
         CheckOneDriveOptions();
         CheckDashboardInactive();
         CheckNightSchedule();
+        CheckAdaptiveBrightness();
         CheckOfflinePhoto();
         Console.WriteLine("OK: modalità notte e salvataggio e riproduzione offline.");
         CheckImage(120, 80, 8, ".jpg", true, 0);
@@ -145,6 +146,21 @@ internal static class Program
         if (visible != expectLandscape || visible &&
             (threshold != 0 && result.Bitmap!.PixelWidth <= result.Bitmap.PixelHeight || !result.Bitmap!.IsFrozen))
             throw new InvalidOperationException($"Filtro errato per {extension} {width}x{height} EXIF {orientation}.");
+    }
+
+    private static void CheckAdaptiveBrightness()
+    {
+        int dark = DisplayBrightness.AdaptiveTarget(0, null);
+        int room = DisplayBrightness.AdaptiveTarget(150, null);
+        int bright = DisplayBrightness.AdaptiveTarget(2000, null);
+        if (dark != 8 || bright != 95 || dark >= room || room >= bright ||
+            DisplayBrightness.AdaptiveTarget(2000, dark) != dark + 12 ||
+            DisplayBrightness.AdaptiveTarget(0, dark + 2) != dark + 2 ||
+            DisplayBrightness.AdaptiveTarget(10000, null) != bright)
+            throw new InvalidOperationException("Curva della luminosità adattiva non valida.");
+        if (new FrameSettings().BrightnessMode != DisplayBrightnessMode.Windows)
+            throw new InvalidOperationException("Le impostazioni esistenti devono lasciare la luminosità a Windows.");
+        Console.WriteLine("OK: luminosità adattiva, transizioni graduali, isteresi e impostazioni predefinite.");
     }
 
     private static void CheckUpdates()
