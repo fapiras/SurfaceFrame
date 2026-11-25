@@ -220,7 +220,7 @@ internal sealed class UpdateService(LocalStorage storage)
 
     internal static bool IsExpectedRepository(string output)
     {
-        var ids = output.Split(['\\r', '\\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var ids = output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         return ids.Length > 0 && ids.All(id => id == RepositoryId);
     }
 
