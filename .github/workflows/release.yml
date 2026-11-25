@@ -95,6 +95,7 @@ jobs:
           & $verifier attestation verify $altered --bundle $bundle @options
           if ($LASTEXITCODE -eq 0) { throw 'Il verificatore ha accettato un pacchetto alterato.' }
           Write-Output 'Verifica riuscita: pacchetti originali accettati e copia alterata respinta.'
+          exit 0
       - name: Pubblica i pacchetti
         if: steps.version.outputs.tag != ''
         shell: pwsh
