@@ -86,7 +86,7 @@ jobs:
           $id = & $verifier attestation verify $package --bundle $bundle @options
           if ($LASTEXITCODE -ne 0 -or $id -ne '1469291609') { throw 'Verifica anonima del pacchetto non riuscita.' }
           $id = & $verifier attestation verify artifacts/release/SurfaceFrame-Setup-win-x64.zip --bundle artifacts/release/surfaceframe-setup.sigstore.json @options
-          if ($LASTEXITCODE -ne 0 -or $id -ne '1469291609') { throw 'Verifica anonima dell’installer non riuscita.' }
+          if ($LASTEXITCODE -ne 0 -or $id -ne '1469291609') { throw 'Verifica anonima del programma di installazione non riuscita.' }
           $altered = Join-Path $env:RUNNER_TEMP 'surfaceframe-altered.zip'
           Copy-Item -LiteralPath $package -Destination $altered
           $stream = [IO.File]::Open($altered, [IO.FileMode]::Append)
