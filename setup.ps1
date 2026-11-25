@@ -104,6 +104,7 @@ try {
             & $dotnet publish $project --configuration Release --runtime win-x64 --self-contained true --output $output
             if ($LASTEXITCODE -ne 0) { throw "Compilazione interrotta. Codice $LASTEXITCODE." }
             & (Join-Path $PSScriptRoot 'bundle-rclone.ps1') -Output $output
+            & (Join-Path $PSScriptRoot 'bundle-update-verifier.ps1') -Output $output
         }
         if (!(Test-AppFiles $output)) { throw 'La preparazione non ha prodotto tutti i file richiesti.' }
         if (Test-Path -LiteralPath $installed) {
@@ -115,11 +116,6 @@ try {
             throw 'Percorso di preparazione inatteso.'
         }
         Move-Item -LiteralPath $resolved -Destination $installed
-    }
-    $channel = Join-Path $PSScriptRoot 'update-channel.json'
-    $installedChannel = Join-Path $installed 'update-channel.json'
-    if ((Test-Path -LiteralPath $channel -PathType Leaf) -and !(Test-Path -LiteralPath $installedChannel)) {
-        Copy-Item -LiteralPath $channel -Destination $installedChannel
     }
     $exe = Join-Path $installed 'SurfaceFrame.exe'
     $settingsFile = Join-Path $root 'settings.json'

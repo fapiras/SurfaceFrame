@@ -1,28 +1,26 @@
 using System.Diagnostics;
 using System.IO.Compression;
-using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace SurfaceFrame;
 
-internal sealed record UpdateChannel(string Repository, string PublicKeyPem);
-internal sealed record UpdateManifest(string Version, string Sha256);
-internal sealed record AvailableUpdate(Version Version, string Notes, string AssetBase,
-    byte[] ManifestBytes, byte[] Signature);
+internal sealed record AvailableUpdate(Version Version, string Notes, string AssetBase);
 
 internal sealed class UpdateService(LocalStorage storage)
 {
     internal const string PackageName = "SurfaceFrame-win-x64.zip";
+    private const string Repository = "fapiras/SurfaceFrame";
+    private const string RepositoryId = "1469291609";
+    private const string BundleName = "surfaceframe-update.sigstore.json";
+    private static string VerifierPath => Path.Combine(AppContext.BaseDirectory, "update-tools", "gh.exe");
     private const long MaxPackageSize = 250L * 1024 * 1024;
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly HttpClient Http = new(new HttpClientHandler { UseCookies = false, MaxAutomaticRedirections = 5 })
         { Timeout = TimeSpan.FromMinutes(2) };
 
     internal static Version CurrentVersion { get; } =
         Version.Parse(typeof(UpdateService).Assembly.GetName().Version!.ToString(3));
 
-    internal bool HasChannel => File.Exists(Path.Combine(AppContext.BaseDirectory, "update-channel.json"));
+    internal bool HasChannel => File.Exists(VerifierPath);
 
     internal string? LastResult
     {
@@ -36,8 +34,9 @@ internal sealed class UpdateService(LocalStorage storage)
 
     internal async Task<AvailableUpdate?> CheckAsync(CancellationToken token)
     {
-        var channel = ReadChannel();
-        using var release = await FetchAsync($"https://api.github.com/repos/{channel.Repository}/releases/latest",
+        if (!HasChannel)
+            throw new InvalidOperationException("Installa il pacchetto Surface Frame dalla pagina Releases.");
+        using var release = await FetchAsync($"https://api.github.com/repos/{Repository}/releases/latest",
             512 * 1024, token);
         using var document = await JsonDocument.ParseAsync(release, cancellationToken: token);
         var entry = document.RootElement;
@@ -47,15 +46,14 @@ internal sealed class UpdateService(LocalStorage storage)
         if (version <= CurrentVersion)
             return null;
 
-        string prefix = $"https://github.com/{channel.Repository}/releases/download/{tag}/";
-        using var manifestFile = await FetchAsync(prefix + "surfaceframe-update.json", 4096, token);
-        using var signatureFile = await FetchAsync(prefix + "surfaceframe-update.sig", 2048, token);
-        byte[] manifestBytes = manifestFile.ToArray();
-        byte[] signature = signatureFile.ToArray();
-        VerifyManifest(channel.PublicKeyPem, manifestBytes, signature, version);
+        string prefix = $"https://github.com/{Repository}/releases/download/{tag}/";
+        var assets = entry.GetProperty("assets").EnumerateArray()
+            .Select(asset => asset.GetProperty("name").GetString()).ToHashSet(StringComparer.Ordinal);
+        if (!assets.Contains(PackageName) || !assets.Contains(BundleName))
+            throw new InvalidDataException("La release non contiene il pacchetto e la relativa attestazione.");
         string notes = entry.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.String
             ? body.GetString() ?? "" : "";
-        return new(version, notes[..Math.Min(notes.Length, 2000)].Trim(), prefix, manifestBytes, signature);
+        return new(version, notes[..Math.Min(notes.Length, 2000)].Trim(), prefix);
     }
 
     internal async Task PrepareAsync(AvailableUpdate update, CancellationToken token)
@@ -66,17 +64,13 @@ internal sealed class UpdateService(LocalStorage storage)
         Directory.CreateDirectory(stage);
         try
         {
-            var manifest = VerifyManifest(ReadChannel().PublicKeyPem, update.ManifestBytes, update.Signature, update.Version);
             string package = Path.Combine(stage, PackageName);
-            await using (var output = new FileStream(package, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            string bundle = Path.Combine(stage, BundleName);
+            await using (var output = File.Create(package))
                 await DownloadAsync(update.AssetBase + PackageName, output, MaxPackageSize, token);
-            await using (var zip = File.OpenRead(package))
-            {
-                byte[] digest = await SHA256.HashDataAsync(zip, token);
-                CheckHash(manifest, digest);
-            }
-            File.WriteAllBytes(Path.Combine(stage, "surfaceframe-update.json"), update.ManifestBytes);
-            File.WriteAllBytes(Path.Combine(stage, "surfaceframe-update.sig"), update.Signature);
+            await using (var output = File.Create(bundle))
+                await DownloadAsync(update.AssetBase + BundleName, output, 256 * 1024, token);
+            await VerifyPackageAsync(package, bundle, token);
             token.ThrowIfCancellationRequested();
             // This worker runs from the old installation and survives the main process.
             using var parent = Process.GetCurrentProcess();
@@ -106,15 +100,10 @@ internal sealed class UpdateService(LocalStorage storage)
             await WaitForParentAsync(parentId, parentStarted);
             oldExited = true;
             string package = Path.Combine(stage, PackageName);
-            var channel = ReadChannel();
-            var manifest = VerifyManifest(channel.PublicKeyPem,
-                File.ReadAllBytes(Path.Combine(stage, "surfaceframe-update.json")),
-                File.ReadAllBytes(Path.Combine(stage, "surfaceframe-update.sig")), version);
-            // Keep the verified archive handle open until extraction completes.
+            // Keep the verified archive handle open throughout verification and extraction.
             using (var input = File.OpenRead(package))
             {
-                CheckHash(manifest, SHA256.HashData(input));
-                input.Position = 0;
+                await VerifyPackageAsync(package, Path.Combine(stage, BundleName), CancellationToken.None);
                 using var archive = new ZipArchive(input, ZipArchiveMode.Read);
                 long bytes = 0;
                 foreach (var file in archive.Entries)
@@ -126,13 +115,13 @@ internal sealed class UpdateService(LocalStorage storage)
                 archive.ExtractToDirectory(destination);
             }
             if (!File.Exists(next) || !File.Exists(Path.Combine(destination, "SurfaceFrame.dll")) ||
-                !File.Exists(Path.Combine(destination, "coreclr.dll")))
+                !File.Exists(Path.Combine(destination, "coreclr.dll")) ||
+                !File.Exists(Path.Combine(destination, "update-tools", "gh.exe")) ||
+                !File.Exists(Path.Combine(destination, "rclone", "rclone.exe")))
                 throw new InvalidDataException("Pacchetto Windows incompleto.");
             var fileVersion = FileVersionInfo.GetVersionInfo(next);
             if (new Version(fileVersion.FileMajorPart, fileVersion.FileMinorPart, fileVersion.FileBuildPart) != version)
                 throw new InvalidDataException("La versione dell’eseguibile non corrisponde al rilascio.");
-            // Carry the trust configuration forward. The update ZIP contains only the app.
-            File.WriteAllText(Path.Combine(destination, "update-channel.json"), JsonSerializer.Serialize(channel, JsonOptions));
             launched = Start(next, "--update-probe", id);
             await ConfirmStartupAsync(stage, launched);
 
@@ -184,23 +173,55 @@ internal sealed class UpdateService(LocalStorage storage)
             File.WriteAllText(Path.Combine(folder, "ready"), Environment.ProcessId.ToString());
     }
 
-    internal static UpdateManifest VerifyManifest(string pem, byte[] bytes, byte[] signature, Version expectedVersion)
+    private static async Task VerifyPackageAsync(string package, string bundle, CancellationToken token)
     {
-        using var rsa = RSA.Create();
-        rsa.ImportFromPem(pem);
-        if (rsa.KeySize < 2048 || !rsa.VerifyData(bytes, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1))
-            throw new InvalidDataException("La firma dell’aggiornamento non è valida.");
-        var manifest = JsonSerializer.Deserialize<UpdateManifest>(bytes, JsonOptions);
-        if (manifest is null || !TryVersion(manifest.Version, out var version) || version != expectedVersion ||
-            manifest.Sha256 is null || !Regex.IsMatch(manifest.Sha256, @"\A[0-9a-fA-F]{64}\z"))
-            throw new InvalidDataException("Manifesto dell’aggiornamento non valido.");
-        return manifest;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromMinutes(2));
+        var start = new ProcessStartInfo(VerifierPath)
+        {
+            CreateNoWindow = true,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        foreach (string key in start.Environment.Keys.Where(key =>
+            key.StartsWith("GH_", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("SIGSTORE_", StringComparison.OrdinalIgnoreCase) ||
+            key.StartsWith("TUF_", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("GITHUB_TOKEN", StringComparison.OrdinalIgnoreCase)).ToArray())
+            start.Environment.Remove(key);
+        start.Environment["GH_PROMPT_DISABLED"] = "1";
+        start.Environment["GH_CONFIG_DIR"] = Path.Combine(Path.GetDirectoryName(package)!, "verifier-config");
+        foreach (string arg in new[]
+        {
+            "attestation", "verify", package, "--bundle", bundle, "--hostname", "github.com",
+            "--repo", Repository, "--signer-workflow", Repository + "/.github/workflows/release.yml",
+            "--source-ref", "refs/heads/main", "--deny-self-hosted-runners", "--format", "json",
+            "--jq", ".[].verificationResult.signature.certificate.sourceRepositoryIdentifier"
+        })
+            start.ArgumentList.Add(arg);
+        using var process = Process.Start(start) ?? throw new IOException("Verificatore degli aggiornamenti non disponibile.");
+        var output = process.StandardOutput.ReadToEndAsync(timeout.Token);
+        var errors = process.StandardError.ReadToEndAsync(timeout.Token);
+        try
+        {
+            await process.WaitForExitAsync(timeout.Token);
+            await errors;
+            if (process.ExitCode != 0 || !IsExpectedRepository(await output))
+                throw new InvalidDataException("Impossibile verificare l’attestazione GitHub del pacchetto.");
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+            throw;
+        }
     }
 
-    internal static void CheckHash(UpdateManifest manifest, byte[] digest)
+    internal static bool IsExpectedRepository(string output)
     {
-        if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(manifest.Sha256), digest))
-            throw new InvalidDataException("L’integrità del pacchetto non coincide con il manifesto firmato.");
+        var ids = output.Split(['\\r', '\\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return ids.Length > 0 && ids.All(id => id == RepositoryId);
     }
 
     internal static bool TryVersion(string? text, out Version version)
@@ -210,19 +231,6 @@ internal sealed class UpdateService(LocalStorage storage)
             return false;
         version = parsed;
         return true;
-    }
-
-    private UpdateChannel ReadChannel()
-    {
-        string path = Path.Combine(AppContext.BaseDirectory, "update-channel.json");
-        if (!File.Exists(path))
-            throw new InvalidOperationException("Il canale degli aggiornamenti non è configurato per questa installazione.");
-        var channel = JsonSerializer.Deserialize<UpdateChannel>(File.ReadAllText(path), JsonOptions);
-        if (channel?.Repository is null || !Regex.IsMatch(channel.Repository, @"\A[A-Za-z0-9_-]+/[A-Za-z0-9_.-]+\z") ||
-            channel.Repository.EndsWith("/.") || channel.Repository.EndsWith("/..") ||
-            string.IsNullOrWhiteSpace(channel.PublicKeyPem))
-            throw new InvalidDataException("Configurazione del canale aggiornamenti non valida.");
-        return channel;
     }
 
     private string InstalledExecutable()

@@ -1,6 +1,5 @@
 using System.IO;
 using System.Threading.Tasks;
-using System.Security.Cryptography;
 using System.Text;
 using System.Net.Http;
 using SurfaceFrame.Verification;
@@ -150,28 +149,10 @@ internal static class Program
 
     private static void CheckUpdates()
     {
-        byte[] data = [1, 2, 3, 4];
-        byte[] digest = SHA256.HashData(data);
-        var version = new Version(1, 0, 3);
-        byte[] bytes = Encoding.UTF8.GetBytes($"{{\"version\":\"{version}\",\"sha256\":\"{Convert.ToHexString(digest)}\"}}");
-        using var rsa = RSA.Create(2048);
-        string pem = rsa.ExportSubjectPublicKeyInfoPem();
-        byte[] signature = rsa.SignData(bytes, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        var manifest = UpdateService.VerifyManifest(pem, bytes, signature, version);
-        UpdateService.CheckHash(manifest, digest);
-        Reject(() => UpdateService.VerifyManifest(pem, bytes, signature, new Version(1, 0, 4)));
-        Reject(() => UpdateService.CheckHash(manifest, SHA256.HashData([4, 3, 2, 1])));
-        bytes[0] ^= 1;
-        Reject(() => UpdateService.VerifyManifest(pem, bytes, signature, version));
-        if (UpdateService.TryVersion("v1.0.3", out _) || UpdateService.TryVersion("1.0.3.0", out _))
-            throw new InvalidOperationException("Versione di aggiornamento non valida accettata.");
-        Console.WriteLine("OK: firma, integrità del pacchetto e corrispondenza della versione.");
-    }
-
-    private static void Reject(Action test)
-    {
-        try { test(); }
-        catch (InvalidDataException) { return; }
-        throw new InvalidOperationException("Un aggiornamento non valido è stato accettato.");
+        if (!UpdateService.IsExpectedRepository("1469291609\r\n") ||
+            UpdateService.IsExpectedRepository("") || UpdateService.IsExpectedRepository("1469291609\n42") ||
+            UpdateService.TryVersion("v1.0.3", out _) || UpdateService.TryVersion("1.0.3.0", out _))
+            throw new InvalidOperationException("Identità del repository o versione non validata.");
+        Console.WriteLine("OK: identità del repository e formato della versione degli aggiornamenti.");
     }
 }

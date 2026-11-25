@@ -19,6 +19,8 @@ if ($LASTEXITCODE -ne 0) { throw 'La pubblicazione Windows x64 non è riuscita.'
 
 & (Join-Path $PSScriptRoot 'bundle-rclone.ps1') -Output $output
 
+& (Join-Path $PSScriptRoot 'bundle-update-verifier.ps1') -Output $output
+
 Get-ChildItem -LiteralPath $output -Filter '*.pdb' -File | Remove-Item
 
 if (-not (Test-Path -LiteralPath (Join-Path $output 'SurfaceFrame.exe') -PathType Leaf)) {

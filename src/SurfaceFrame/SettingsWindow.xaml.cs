@@ -26,7 +26,7 @@ public partial class SettingsWindow : Window
         this.frame = frame;
         bool channelReady = frame.Updates.HasChannel;
         var summary = channelReady ? "Canale GitHub attivo." :
-            "Per attivare il canale, installa SurfaceFrame-Setup-win-x64.zip dalla release firmata.";
+            "Per attivare il canale, installa SurfaceFrame-Setup-win-x64.zip dalla pagina Releases.";
         UpdateStatusText.Text = $"Versione {UpdateService.CurrentVersion}. {summary} {frame.Updates.LastResult}".TrimEnd();
         CheckUpdateButton.IsEnabled = channelReady;
         OpenReleasesButton.Visibility = channelReady ? Visibility.Collapsed : Visibility.Visible;

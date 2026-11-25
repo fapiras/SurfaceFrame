@@ -1,44 +1,106 @@
-name: Rilascio Windows firmato
+name: Rilascio Windows attestato
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Versione da pubblicare (es. v1.0.2)'
-        required: true
-        type: string
 
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: surface-frame-release
+  cancel-in-progress: false
 
 jobs:
   release:
-    if: github.event_name == 'push' || github.ref_name == github.event.repository.default_branch
+    if: github.repository == 'fapiras/SurfaceFrame' && github.ref == 'refs/heads/main'
     runs-on: windows-2025
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '10.0.x'
-      - name: Test e compilazione
-        shell: pwsh
-        run: ./build.ps1
-      - name: Prepara e firma il rilascio
-        shell: pwsh
-        env:
-          SURFACEFRAME_SIGNING_KEY_PEM: "${{ secrets.SURFACEFRAME_SIGNING_KEY_PEM }}"
-          SURFACEFRAME_PUBLIC_KEY_PEM: "${{ vars.SURFACEFRAME_PUBLIC_KEY_PEM }}"
-          RELEASE_TAG: "${{ inputs.tag || github.ref_name }}"
-          RELEASE_REPOSITORY: "${{ github.repository }}"
-        run: ./package-release.ps1 -Tag $env:RELEASE_TAG -Repository $env:RELEASE_REPOSITORY
-      - name: Pubblica i pacchetti
+      - name: Individua una versione da pubblicare
+        id: version
         shell: pwsh
         env:
           GH_TOKEN: "${{ github.token }}"
-          RELEASE_TAG: "${{ inputs.tag || github.ref_name }}"
         run: |
-          $target = if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch') { @('--target', $env:GITHUB_SHA) } else { @('--verify-tag') }
-          gh release create $env:RELEASE_TAG @target --generate-notes artifacts/release/SurfaceFrame-win-x64.zip artifacts/release/surfaceframe-update.json artifacts/release/surfaceframe-update.sig artifacts/release/SurfaceFrame-Setup-win-x64.zip
+          $project = [xml](Get-Content -LiteralPath src/SurfaceFrame/SurfaceFrame.csproj -Raw)
+          $version = $project.Project.PropertyGroup.Version
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Versione non valida.' }
+          $tag = "v$version"
+          $releases = gh release list --limit 100 --json tagName
+          if ($LASTEXITCODE -ne 0) { throw 'Impossibile leggere le release GitHub.' }
+          if (($releases | ConvertFrom-Json).tagName -contains $tag) {
+            Write-Output "La versione $tag è già pubblicata."
+          } else {
+            "tag=$tag" >> $env:GITHUB_OUTPUT
+          }
+      - uses: actions/setup-dotnet@v4
+        if: steps.version.outputs.tag != ''
+        with:
+          dotnet-version: '10.0.x'
+      - name: Test e compilazione
+        if: steps.version.outputs.tag != ''
+        shell: pwsh
+        run: ./build.ps1
+      - name: Prepara i pacchetti
+        if: steps.version.outputs.tag != ''
+        shell: pwsh
+        env:
+          RELEASE_TAG: "${{ steps.version.outputs.tag }}"
+        run: ./package-release.ps1 -Tag $env:RELEASE_TAG
+      - name: Attesta il pacchetto di aggiornamento
+        if: steps.version.outputs.tag != ''
+        id: attest-update
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: artifacts/release/SurfaceFrame-win-x64.zip
+      - name: Attesta il pacchetto di installazione
+        if: steps.version.outputs.tag != ''
+        id: attest-setup
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: artifacts/release/SurfaceFrame-Setup-win-x64.zip
+      - name: Verifica il download senza account e respingi un pacchetto alterato
+        if: steps.version.outputs.tag != ''
+        shell: pwsh
+        env:
+          UPDATE_BUNDLE: "${{ steps.attest-update.outputs.bundle-path }}"
+          SETUP_BUNDLE: "${{ steps.attest-setup.outputs.bundle-path }}"
+        run: |
+          Copy-Item -LiteralPath $env:UPDATE_BUNDLE -Destination artifacts/release/surfaceframe-update.sigstore.json
+          Copy-Item -LiteralPath $env:SETUP_BUNDLE -Destination artifacts/release/surfaceframe-setup.sigstore.json
+          $env:GH_CONFIG_DIR = Join-Path $env:RUNNER_TEMP 'surfaceframe-anonymous-verifier'
+          $env:GH_PROMPT_DISABLED = '1'
+          Remove-Item Env:GH_TOKEN, Env:GITHUB_TOKEN -ErrorAction SilentlyContinue
+          $verifier = 'artifacts/win-x64/update-tools/gh.exe'
+          $options = @('--hostname', 'github.com', '--repo', 'fapiras/SurfaceFrame',
+            '--signer-workflow', 'fapiras/SurfaceFrame/.github/workflows/release.yml',
+            '--source-ref', 'refs/heads/main', '--deny-self-hosted-runners', '--format', 'json',
+            '--jq', '.[].verificationResult.signature.certificate.sourceRepositoryIdentifier')
+          $package = 'artifacts/release/SurfaceFrame-win-x64.zip'
+          $bundle = 'artifacts/release/surfaceframe-update.sigstore.json'
+          $id = & $verifier attestation verify $package --bundle $bundle @options
+          if ($LASTEXITCODE -ne 0 -or $id -ne '1469291609') { throw 'Verifica anonima del pacchetto non riuscita.' }
+          $id = & $verifier attestation verify artifacts/release/SurfaceFrame-Setup-win-x64.zip --bundle artifacts/release/surfaceframe-setup.sigstore.json @options
+          if ($LASTEXITCODE -ne 0 -or $id -ne '1469291609') { throw 'Verifica anonima dell’installer non riuscita.' }
+          $altered = Join-Path $env:RUNNER_TEMP 'surfaceframe-altered.zip'
+          Copy-Item -LiteralPath $package -Destination $altered
+          $stream = [IO.File]::Open($altered, [IO.FileMode]::Append)
+          try { $stream.WriteByte(0) } finally { $stream.Dispose() }
+          $PSNativeCommandUseErrorActionPreference = $false
+          & $verifier attestation verify $altered --bundle $bundle @options
+          if ($LASTEXITCODE -eq 0) { throw 'Il verificatore ha accettato un pacchetto alterato.' }
+          Write-Output 'Verifica riuscita: pacchetti originali accettati e copia alterata respinta.'
+      - name: Pubblica i pacchetti
+        if: steps.version.outputs.tag != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          RELEASE_TAG: "${{ steps.version.outputs.tag }}"
+        run: |
+          gh release create $env:RELEASE_TAG --target $env:GITHUB_SHA --generate-notes artifacts/release/SurfaceFrame-win-x64.zip artifacts/release/surfaceframe-update.sigstore.json artifacts/release/SurfaceFrame-Setup-win-x64.zip artifacts/release/surfaceframe-setup.sigstore.json
           if ($LASTEXITCODE -ne 0) { throw 'Pubblicazione GitHub non riuscita.' }

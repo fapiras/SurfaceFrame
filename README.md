@@ -12,17 +12,11 @@ Configura OneDrive e Home Assistant nelle impostazioni. In **Sistema** puoi sceg
 
 ## Aggiornamenti dall’app
 
-In **Impostazioni → Sistema → Aggiornamenti**, premi **Controlla aggiornamenti**. Quando è disponibile un rilascio più recente, leggi le note e premi **Aggiorna e riavvia**. Il programma verifica la firma RSA del manifesto e l’hash SHA-256 dello ZIP, poi avvia il nuovo eseguibile in una cartella distinta. Se la finestra della nuova versione non conferma l’avvio, riapre quella precedente. La configurazione, i dati di accesso e la cache WebView2 sono nella cartella dati dell’utente, fuori dalle directory delle versioni.
+Scarica **SurfaceFrame-Setup-win-x64.zip** dalla [pagina Releases](https://github.com/fapiras/SurfaceFrame/releases), estrailo e avvia **Avvia-Surface-Frame.cmd** una volta. Dalla versione 1.2.0 il verificatore è incluso nel pacchetto.
 
-Il pacchetto iniziale 1.0.2 permette di provare l’app e vedere il pulsante. Per ricevere aggiornamenti serve una configurazione iniziale del canale:
+In **Impostazioni → Sistema → Aggiornamenti** usa **Controlla aggiornamenti** e, quando disponibile, **Aggiorna e riavvia**. L’app verifica l’attestazione Sigstore del pacchetto, l’identità del repository e del workflow e la versione dell’eseguibile prima di avviarlo. Se la nuova versione non conferma l’avvio, riparte quella precedente.
 
-1. Carica il progetto in un repository GitHub autorizzato. L’app usa GitHub Releases senza richiedere credenziali al Surface, quindi per questa implementazione il repository e i pacchetti devono essere accessibili pubblicamente. Non includere dati del Surface, configurazioni personali o chiavi private nel repository.
-2. Genera una coppia RSA 3072 in un ambiente di cui controlli l’accesso. Ad esempio, usa **openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out surfaceframe-private.pem** e **openssl pkey -in surfaceframe-private.pem -pubout -out surfaceframe-public.pem**. Conserva la chiave privata fuori dal repository.
-3. Imposta **SURFACEFRAME_SIGNING_KEY_PEM** come secret GitHub Actions e **SURFACEFRAME_PUBLIC_KEY_PEM** come variabile del repository. Il workflow usa il tag **v1.0.2** per compilare, testare e pubblicare una release con il pacchetto di installazione e i file firmati per l’aggiornamento. Il tag deve coincidere con la versione nel progetto.
-4. Sul Surface estrai **SurfaceFrame-Setup-win-x64.zip** dalla release di cui ti fidi e avvia il launcher. Se la 1.0.2 è già installata dal pacchetto iniziale, il launcher aggiunge il canale senza ricompilare.
-5. Per ogni rilascio successivo, incrementa la versione nel progetto e crea il tag corrispondente. Il pulsante sul Surface propone solo versioni più recenti.
-
-[GitHub Releases API](https://docs.github.com/en/rest/releases/releases#get-the-latest-release) · [Verifica firma RSA in .NET](https://learn.microsoft.com/en-us/dotnet/api/system.security.cryptography.rsa.verifydata)
+Il workflow pubblica la release quando cambia la versione sul ramo `main`, dopo aver verificato i due ZIP e respinto una copia alterata. Le attestazioni vengono generate da GitHub Actions tramite OIDC. Non sono richiesti segreti di firma o accessi a GitHub sul Surface.
 
 ## OneDrive personale
 
